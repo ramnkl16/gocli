@@ -1,0 +1,50 @@
+version: 1
+
+# Repo-wide environment available to every pipeline.
+env:
+  APP_NAME: hello-app
+
+pipelines:
+  ci:
+    description: Build and test
+    steps:
+      - name: tests
+        type: script
+        run: go test ./...
+      - name: lint
+        type: script
+        run: go vet ./...
+
+  docker-release:
+    description: Build & push the container image
+    env:
+      REGISTRY: ghcr.io/your-org
+    steps:
+      - name: build image
+        type: docker
+        context: .
+        dockerfile: Dockerfile
+        image: ghcr.io/your-org/hello-app:latest
+      - name: push image
+        type: docker
+        image: ghcr.io/your-org/hello-app:latest
+        push: true
+
+  staging:
+    description: Roll out to the staging cluster
+    steps:
+      - name: apply manifests
+        type: k8s
+        action: apply
+        manifest: deploy/k8s/staging
+        namespace: staging
+      - name: wait rollout
+        type: k8s
+        action: rollout
+        namespace: staging
+        args:
+          - status
+          - deployment/hello-app
+      - name: smoke test
+        type: script
+        run: curl -fsS https://staging.example.com/healthz
