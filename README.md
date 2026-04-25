@@ -12,7 +12,7 @@
 | Auth     | `auth login`, `auth status`, `auth logout`                                                |
 | Jira     | `jira list`, `jira view`, `jira open`, `jira transition`, `jira branch` (see **Jira: branch** below) |
 | GitHub   | `gh prs`, `gh pr-view <n>`, `gh pr-checkout <n>`, `gh issues`                             |
-| AI       | `pr review <n>` — code review via GitHub Copilot / GitHub Models                          |
+| PR       | `pr create` (open a PR on GitHub), `pr review <n>` (AI review via GitHub Copilot / Models) |
 | Deploy   | `deploy list`, `deploy run <pipeline>`, `deploy validate` — driven by `deploy.yml`        |
 
 Tokens are kept in the OS keyring (Windows Credential Manager / macOS
@@ -49,6 +49,12 @@ gocli auth status
 
 - **Jira** — base URL (e.g. `https://acme.atlassian.net`), email, project
   key, API token (created at <https://id.atlassian.com/manage-profile/security/api-tokens>).
+  The **Sprint** column uses your Jira site’s **Sprint** custom field. The
+  field id is **discovered automatically** (GET `/rest/api/2/field`, first
+  custom field named “Sprint”). Override in `~/.gocli/config.yaml` as
+  `jira.sprint_field: customfield_XXXXX`, or `GOCLI_JIRA_SPRINT_FIELD`. Set
+  `jira.sprint_field: auto` or leave it unset to keep discovery; use `none` in
+  the env to skip requesting the field.
 - **GitHub** — username, default repo (`owner/name`, optional), personal
   access token (scopes: `repo`, `read:org`).
 - **AI provider** — `github-models` (default; uses your GitHub token
@@ -102,7 +108,7 @@ Use `--dry-run` to print the branch name without touching git or Jira, or
 ## Examples
 
 ```bash
-gocli jira list                               # my open issues
+gocli jira list                               # my open issues (includes SPRINT if Jira Software sprints are present)
 gocli jira list --status "In Review"
 gocli jira view LPAD-26763
 gocli jira transition LPAD-26763 "In Progress"
@@ -119,6 +125,9 @@ gocli gh prs --mine --state open
 gocli gh pr-view 482                          # title, checks, mergeability
 gocli gh pr-checkout 482
 
+gocli pr create --title "Fix login"           # or omit --title to use last commit subject
+gocli pr create --base main --head my-feature
+gocli pr create -R myorg/therepo --workdir C:\other\clone --draft
 gocli pr review 482                           # AI review, prints markdown
 
 gocli deploy list -f examples/deploy.yml

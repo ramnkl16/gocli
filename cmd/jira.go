@@ -120,9 +120,17 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 
 	// Jira Cloud deprecated GET /rest/api/2|3/search. Use GET /rest/api/3/search/jql
 	// (cursor + JQL) — see https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/
-	issues, err := c.SearchIssuesJQL(ctx, jql, jiraLimit, []string{
+	fields := []string{
 		"summary", "status", "assignee", "priority", "updated",
-	})
+	}
+	sprintF, err := c.ResolvedSprintFieldID(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve sprint field: %w", err)
+	}
+	if sprintF != "" {
+		fields = append(fields, sprintF)
+	}
+	issues, err := c.SearchIssuesJQL(ctx, jql, jiraLimit, fields)
 	if err != nil {
 		return fmt.Errorf("jql search: %w", err)
 	}
@@ -141,13 +149,17 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 		if is.Fields != nil && is.Fields.Status != nil {
 			status = is.Fields.Status.Name
 		}
+		sprint := "—"
+		if is.Fields != nil {
+			sprint = ui.Truncate(jiraint.FormatSprintColumn(is.Fields), 28)
+		}
 		summary := ""
 		if is.Fields != nil {
 			summary = ui.Truncate(is.Fields.Summary, 70)
 		}
-		rows = append(rows, []string{keyCol, status, assignee, summary})
+		rows = append(rows, []string{keyCol, status, sprint, assignee, summary})
 	}
-	ui.Table(os.Stdout, []string{"KEY", "STATUS", "ASSIGNEE", "SUMMARY"}, rows)
+	ui.Table(os.Stdout, []string{"KEY", "STATUS", "SPRINT", "ASSIGNEE", "SUMMARY"}, rows)
 	return nil
 }
 

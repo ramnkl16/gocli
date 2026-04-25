@@ -24,6 +24,9 @@ type JiraConfig struct {
 	BaseURL string `mapstructure:"base_url" yaml:"base_url"`
 	Email   string `mapstructure:"email"    yaml:"email"`
 	Project string `mapstructure:"project"  yaml:"project"`
+	// SprintField is the Jira custom field id for the Sprint field (Jira Software).
+	// Most Cloud sites use "customfield_10020". Empty disables requesting it.
+	SprintField string `mapstructure:"sprint_field" yaml:"sprint_field"`
 }
 
 type GitHubConfig struct {
