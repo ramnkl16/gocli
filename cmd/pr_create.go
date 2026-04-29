@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -115,12 +116,43 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 
 	p, _, err := c.PullRequests.Create(ctx, owner, name, newPR)
 	if err != nil {
-		return err
+		return enhancePRCreateError(err)
 	}
 
 	fmt.Println(ui.OK(fmt.Sprintf("✓ Opened pull request #%d", p.GetNumber())))
 	fmt.Println(p.GetHTMLURL())
 	return nil
+}
+
+func enhancePRCreateError(err error) error {
+	var er *gh.ErrorResponse
+	if errors.As(err, &er) && er.Response != nil && er.Response.StatusCode == 403 {
+		repo := "this repository"
+		if er.Response.Request != nil && er.Response.Request.URL != nil {
+			repo = repoFromGitHubAPIPath(er.Response.Request.URL.Path)
+		}
+		return fmt.Errorf("%w\n\nGitHub returned 403: your token cannot open a pull request on %s. Fix:\n"+
+			"  • Classic PAT: enable scope 'repo' (full), or for public-only repos you can try 'public_repo' (narrower).\n"+
+			"  • Fine-grained PAT: add repository access for this repo, then set Pull requests: Read and write, Contents: Read or Read and write.\n"+
+			"  • If the repo is under an org with SSO: fine-grained token row → Configure SSO and authorize the org.\n"+
+			"  • The branch in --head must already exist on GitHub (run git push first).\n", err, repo)
+	}
+	if err != nil && strings.Contains(err.Error(), "not accessible by personal access token") {
+		return fmt.Errorf("%w\n\n(see: classic PAT with 'repo' scope, or fine-grained: Pull requests + Contents on this repository; push your branch first)", err)
+	}
+	return err
+}
+
+// repoFromGitHubAPIPath turns "/repos/owner/name/pulls" into "owner/name" for user-facing text.
+func repoFromGitHubAPIPath(path string) string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) >= 3 && parts[0] == "repos" {
+		return parts[1] + "/" + parts[2]
+	}
+	if path != "" {
+		return path
+	}
+	return "this repository"
 }
 
 func prCreateReadBody() (string, error) {
