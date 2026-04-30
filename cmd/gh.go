@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 
 	gh "github.com/google/go-github/v66/github"
 	"github.com/spf13/cobra"
@@ -53,6 +54,27 @@ var ghIssuesCmd = &cobra.Command{
 	RunE:  runGhIssues,
 }
 
+var (
+	ghPRCreateTitle string
+	ghPRCreateBody  string
+	ghPRCreateBase  string
+	ghPRCreateDraft bool
+)
+
+var ghPRCreateCmd = &cobra.Command{
+	Use:   "pr-create",
+	Short: "Create a pull request from the current branch",
+	Long: `Create a pull request from the current branch to the base branch.
+
+The head branch is detected from your current git branch. You must push
+the branch to GitHub before creating the PR.
+
+Examples:
+  gocli gh pr-create --title "Fix login bug" --base main
+  gocli gh pr-create -t "Add feature" -b "Implements new feature" --base develop --draft`,
+	RunE: runGhPRCreate,
+}
+
 func init() {
 	for _, c := range []*cobra.Command{ghPRsCmd, ghPRViewCmd, ghPRCheckoutCmd, ghIssuesCmd} {
 		c.Flags().StringVarP(&ghRepoFlag, "repo", "R", "", "owner/name (defaults to git remote or config)")
@@ -64,7 +86,14 @@ func init() {
 	ghIssuesCmd.Flags().StringVar(&ghIssueState, "state", "open", "open|closed|all")
 	ghIssuesCmd.Flags().IntVarP(&ghLimit, "limit", "n", 30, "max issues to return")
 
-	ghCmd.AddCommand(ghPRsCmd, ghPRViewCmd, ghPRCheckoutCmd, ghIssuesCmd)
+	ghPRCreateCmd.Flags().StringVarP(&ghRepoFlag, "repo", "R", "", "owner/name (defaults to git remote or config)")
+	ghPRCreateCmd.Flags().StringVarP(&ghPRCreateTitle, "title", "t", "", "PR title (required)")
+	ghPRCreateCmd.Flags().StringVarP(&ghPRCreateBody, "body", "b", "", "PR body/description")
+	ghPRCreateCmd.Flags().StringVar(&ghPRCreateBase, "base", "main", "base branch to merge into")
+	ghPRCreateCmd.Flags().BoolVar(&ghPRCreateDraft, "draft", false, "create as draft PR")
+	ghPRCreateCmd.MarkFlagRequired("title")
+
+	ghCmd.AddCommand(ghPRsCmd, ghPRViewCmd, ghPRCheckoutCmd, ghIssuesCmd, ghPRCreateCmd)
 }
 
 func runGhPRs(cmd *cobra.Command, _ []string) error {
@@ -158,6 +187,65 @@ func runGhPRCheckout(cmd *cobra.Command, args []string) error {
 	c := exec.Command("gh", "pr", "checkout", args[0])
 	c.Stdout, c.Stderr, c.Stdin = os.Stdout, os.Stderr, os.Stdin
 	return c.Run()
+}
+
+func runGhPRCreate(cmd *cobra.Command, _ []string) error {
+	ctx := context.Background()
+	c, err := ghint.New(ctx)
+	if err != nil {
+		return err
+	}
+	owner, name, err := c.ResolveRepo(ghRepoFlag)
+	if err != nil {
+		return err
+	}
+
+	// Get current branch name
+	headBranch, err := getCurrentBranch()
+	if err != nil {
+		return fmt.Errorf("get current branch: %w", err)
+	}
+
+	ui.Section(fmt.Sprintf("Creating PR in %s/%s", owner, name))
+	fmt.Printf("  %s %s\n", ui.Dim("Head:"), headBranch)
+	fmt.Printf("  %s %s\n", ui.Dim("Base:"), ghPRCreateBase)
+	fmt.Printf("  %s %s\n", ui.Dim("Title:"), ghPRCreateTitle)
+	if ghPRCreateDraft {
+		fmt.Printf("  %s %s\n", ui.Dim("Draft:"), "yes")
+	}
+	fmt.Println()
+
+	newPR := &gh.NewPullRequest{
+		Title: gh.String(ghPRCreateTitle),
+		Head:  gh.String(headBranch),
+		Base:  gh.String(ghPRCreateBase),
+		Body:  gh.String(ghPRCreateBody),
+		Draft: gh.Bool(ghPRCreateDraft),
+	}
+
+	pr, resp, err := c.PullRequests.Create(ctx, owner, name, newPR)
+	if err != nil {
+		if resp != nil && resp.StatusCode == 403 {
+			return fmt.Errorf("403 Forbidden - check your GitHub token has 'repo' scope and is valid")
+		}
+		return fmt.Errorf("create pr: %w", err)
+	}
+
+	fmt.Println(ui.OK(fmt.Sprintf("✓ Created PR #%d", pr.GetNumber())))
+	fmt.Printf("  %s %s\n", ui.Dim("URL:"), pr.GetHTMLURL())
+	return nil
+}
+
+func getCurrentBranch() (string, error) {
+	out, err := exec.Command("git", "rev-parse", "--abbrev-ref", "HEAD").Output()
+	if err != nil {
+		return "", err
+	}
+	branch := strings.TrimSpace(string(out))
+	if branch == "" {
+		return "", fmt.Errorf("could not determine current branch")
+	}
+	return branch, nil
 }
 
 func runGhIssues(cmd *cobra.Command, _ []string) error {
