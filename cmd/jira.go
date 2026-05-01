@@ -18,10 +18,11 @@ import (
 )
 
 var (
-	jiraJQL    string
-	jiraLimit  int
-	jiraMine   bool
-	jiraStatus string
+	jiraJQL      string
+	jiraLimit    int
+	jiraMine     bool
+	jiraStatus   string
+	jiraAssignee string
 )
 
 var jiraCmd = &cobra.Command{
@@ -80,8 +81,9 @@ git checkout -b. By default the git repository is the current directory; use
 }
 
 func init() {
-	jiraListCmd.Flags().StringVar(&jiraJQL, "jql", "", "raw JQL (overrides --mine / --status)")
-	jiraListCmd.Flags().BoolVar(&jiraMine, "mine", true, "only issues assigned to me")
+	jiraListCmd.Flags().StringVar(&jiraJQL, "jql", "", "raw JQL (overrides --mine / --status / --assignee)")
+	jiraListCmd.Flags().BoolVar(&jiraMine, "mine", true, "only issues assigned to me (--assignee disables this)")
+	jiraListCmd.Flags().StringVarP(&jiraAssignee, "assignee", "u", "", `filter by assignee: Jira id/email, or key from jira.assignee_aliases (see config)`)
 	jiraListCmd.Flags().StringVar(&jiraStatus, "status", "", "filter by status (e.g. 'In Progress')")
 	jiraListCmd.Flags().IntVarP(&jiraLimit, "limit", "n", 25, "max issues to return")
 
@@ -105,7 +107,13 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 	jql := jiraJQL
 	if jql == "" {
 		var parts []string
-		if jiraMine {
+		if trimmed := strings.TrimSpace(jiraAssignee); trimmed != "" {
+			resolved, err := jiraint.ResolveAssignee(c.AssigneeAliases, trimmed)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, fmt.Sprintf("assignee = %q", resolved))
+		} else if jiraMine {
 			parts = append(parts, "assignee = currentUser()")
 		}
 		if jiraStatus != "" {

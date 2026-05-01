@@ -109,7 +109,18 @@ Use `--dry-run` to print the branch name without touching git or Jira, or
 
 ```bash
 gocli jira list                               # my open issues (includes SPRINT if Jira Software sprints are present)
+gocli jira list --assignee bob                # shorthand; see `jira.assignee_aliases` in ~/.gocli/config.yaml
+gocli jira list -u teammate@corp.com          # `-u` is short for `--assignee` (literal Jira identifier)
 gocli jira list --status "In Review"
+
+Optional assignee shortcuts in config (same file `auth login` writes):
+
+```yaml
+jira:
+  assignee_aliases:
+    bob: bob@corp.com
+    jd: JIRA_ACCOUNT_ID_HERE
+```
 gocli jira view LPAD-26763
 gocli jira transition LPAD-26763 "In Progress"
 
