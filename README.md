@@ -10,7 +10,7 @@
 | Area     | Commands                                                                                  |
 | -------- | ----------------------------------------------------------------------------------------- |
 | Auth     | `auth login`, `auth status`, `auth logout`                                                |
-| Jira     | `jira list`, `jira view`, `jira open`, `jira transition`, `jira branch` (see **Jira: branch** below) |
+| Jira     | `jira list`, `jira view`, `jira view --markdown` (paste into Cursor), `jira open`, `jira transition`, `jira branch` (see **Jira: branch** below) |
 | GitHub   | `gh prs`, `gh pr-view <n>`, `gh pr-checkout <n>`, `gh issues`                             |
 | PR       | `pr create` (open a PR on GitHub), `pr review <n>` (AI review via GitHub Copilot / Models) |
 | Deploy   | `deploy list`, `deploy run <pipeline>`, `deploy validate` — driven by `deploy.yml`        |
@@ -122,6 +122,7 @@ jira:
     jd: JIRA_ACCOUNT_ID_HERE
 ```
 gocli jira view LPAD-26763
+gocli jira view LPAD-26763 --markdown   # or -m; copy output into Cursor Agent
 gocli jira transition LPAD-26763 "In Progress"
 
 # create branch bug-LPAD-26763-…, move ticket to "In Progress", git checkout -b

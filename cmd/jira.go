@@ -18,11 +18,12 @@ import (
 )
 
 var (
-	jiraJQL      string
-	jiraLimit    int
-	jiraMine     bool
-	jiraStatus   string
-	jiraAssignee string
+	jiraJQL           string
+	jiraLimit         int
+	jiraMine          bool
+	jiraStatus        string
+	jiraAssignee      string
+	jiraViewMarkdown  bool
 )
 
 var jiraCmd = &cobra.Command{
@@ -93,6 +94,8 @@ func init() {
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchAllowDirty, "allow-dirty", false, "allow a dirty git working tree")
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchNoTransition, "no-transition", false, "only create and checkout the branch; do not change Jira")
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchDryRun, "dry-run", false, "print branch name and actions only")
+
+	jiraViewCmd.Flags().BoolVarP(&jiraViewMarkdown, "markdown", "m", false, "print issue as markdown (e.g. paste into Cursor)")
 
 	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraBranchCmd)
 }
@@ -181,6 +184,11 @@ func runJiraView(cmd *cobra.Command, args []string) error {
 	is, _, err := c.Issue.Get(ctx, key, nil)
 	if err != nil {
 		return fmt.Errorf("get %s: %w", key, err)
+	}
+
+	if jiraViewMarkdown {
+		_, err := fmt.Print(jiraint.IssueAsMarkdown(c, is))
+		return err
 	}
 
 	ui.Section(is.Key + " — " + is.Fields.Summary)
