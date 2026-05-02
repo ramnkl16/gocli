@@ -19,7 +19,7 @@ var (
 
 var deployCmd = &cobra.Command{
 	Use:   "deploy",
-	Short: "Run deployment pipelines defined in deploy.yml",
+	Short: "Run deploy.yml pipelines (script, docker, k8s/EKS, ssh)",
 }
 
 var deployListCmd = &cobra.Command{

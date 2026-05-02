@@ -48,3 +48,45 @@ pipelines:
       - name: smoke test
         type: script
         run: curl -fsS https://staging.example.com/healthz
+
+  # Copy this pattern into any app repo: run with `gocli deploy run vm-prod -f deploy.yml`
+  vm-prod:
+    description: Deploy to a VM over SSH (pull + compose, or your own script)
+    steps:
+      - name: remote update
+        type: ssh
+        host: prod.example.com
+        user: deploy
+        identity_file: ~/.ssh/id_ed25519
+        args:
+          - -o
+          - StrictHostKeyChecking=accept-new
+        run: |
+          set -eux
+          cd /opt/myapp
+          git pull
+          docker compose up -d --build
+
+  # EKS: uses AWS CLI for kubeconfig, then kubectl against that context.
+  # Adjust kube_context to match `kubectl config get-contexts` after update-kubeconfig.
+  eks-prod:
+    description: Apply manifests to Amazon EKS
+    steps:
+      - name: kubeconfig
+        type: script
+        shell: bash
+        run: aws eks update-kubeconfig --name my-eks-cluster --region us-east-1
+      - name: apply
+        type: k8s
+        action: apply
+        manifest: deploy/k8s/prod
+        namespace: production
+        kube_context: my-eks-cluster
+      - name: wait rollout
+        type: k8s
+        action: rollout
+        namespace: production
+        kube_context: my-eks-cluster
+        args:
+          - status
+          - deployment/hello-app
