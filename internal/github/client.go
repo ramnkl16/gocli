@@ -52,10 +52,16 @@ func Token() (string, error) {
 //  2. the "origin" git remote in the current dir
 //  3. the configured default repo
 func (c *Client) ResolveRepo(override string) (owner, name string, err error) {
+	return c.ResolveRepoInDir(override, "")
+}
+
+// ResolveRepoInDir is like ResolveRepo but uses git -C <workdir> to read
+// origin when workdir is non-empty.
+func (c *Client) ResolveRepoInDir(override, workdir string) (owner, name string, err error) {
 	if override != "" {
 		return splitRepo(override)
 	}
-	if r, ok := remoteRepo(); ok {
+	if r, ok := remoteRepoInDir(workdir); ok {
 		return splitRepo(r)
 	}
 	if c.DefaultRepo != "" {
@@ -74,7 +80,17 @@ func splitRepo(s string) (string, string, error) {
 
 // remoteRepo runs `git remote get-url origin` and parses out owner/name.
 func remoteRepo() (string, bool) {
-	out, err := exec.Command("git", "remote", "get-url", "origin").Output()
+	return remoteRepoInDir("")
+}
+
+func remoteRepoInDir(workdir string) (string, bool) {
+	var cmd *exec.Cmd
+	if strings.TrimSpace(workdir) == "" {
+		cmd = exec.Command("git", "remote", "get-url", "origin")
+	} else {
+		cmd = exec.Command("git", "-C", workdir, "remote", "get-url", "origin")
+	}
+	out, err := cmd.Output()
 	if err != nil {
 		return "", false
 	}

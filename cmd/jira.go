@@ -18,10 +18,12 @@ import (
 )
 
 var (
-	jiraJQL    string
-	jiraLimit  int
-	jiraMine   bool
-	jiraStatus string
+	jiraJQL           string
+	jiraLimit         int
+	jiraMine          bool
+	jiraStatus        string
+	jiraAssignee      string
+	jiraViewMarkdown  bool
 )
 
 var jiraCmd = &cobra.Command{
@@ -80,8 +82,9 @@ git checkout -b. By default the git repository is the current directory; use
 }
 
 func init() {
-	jiraListCmd.Flags().StringVar(&jiraJQL, "jql", "", "raw JQL (overrides --mine / --status)")
-	jiraListCmd.Flags().BoolVar(&jiraMine, "mine", true, "only issues assigned to me")
+	jiraListCmd.Flags().StringVar(&jiraJQL, "jql", "", "raw JQL (overrides --mine / --status / --assignee)")
+	jiraListCmd.Flags().BoolVar(&jiraMine, "mine", true, "only issues assigned to me (--assignee disables this)")
+	jiraListCmd.Flags().StringVarP(&jiraAssignee, "assignee", "u", "", `filter by assignee: Jira id/email, or key from jira.assignee_aliases (see config)`)
 	jiraListCmd.Flags().StringVar(&jiraStatus, "status", "", "filter by status (e.g. 'In Progress')")
 	jiraListCmd.Flags().IntVarP(&jiraLimit, "limit", "n", 25, "max issues to return")
 
@@ -91,6 +94,8 @@ func init() {
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchAllowDirty, "allow-dirty", false, "allow a dirty git working tree")
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchNoTransition, "no-transition", false, "only create and checkout the branch; do not change Jira")
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchDryRun, "dry-run", false, "print branch name and actions only")
+
+	jiraViewCmd.Flags().BoolVarP(&jiraViewMarkdown, "markdown", "m", false, "print issue as markdown (e.g. paste into Cursor)")
 
 	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraBranchCmd)
 }
@@ -105,7 +110,13 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 	jql := jiraJQL
 	if jql == "" {
 		var parts []string
-		if jiraMine {
+		if trimmed := strings.TrimSpace(jiraAssignee); trimmed != "" {
+			resolved, err := jiraint.ResolveAssignee(c.AssigneeAliases, trimmed)
+			if err != nil {
+				return err
+			}
+			parts = append(parts, fmt.Sprintf("assignee = %q", resolved))
+		} else if jiraMine {
 			parts = append(parts, "assignee = currentUser()")
 		}
 		if jiraStatus != "" {
@@ -120,9 +131,17 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 
 	// Jira Cloud deprecated GET /rest/api/2|3/search. Use GET /rest/api/3/search/jql
 	// (cursor + JQL) — see https://developer.atlassian.com/cloud/jira/platform/rest/v3/api-group-issue-search/
-	issues, err := c.SearchIssuesJQL(ctx, jql, jiraLimit, []string{
+	fields := []string{
 		"summary", "status", "assignee", "priority", "updated",
-	})
+	}
+	sprintF, err := c.ResolvedSprintFieldID(ctx)
+	if err != nil {
+		return fmt.Errorf("resolve sprint field: %w", err)
+	}
+	if sprintF != "" {
+		fields = append(fields, sprintF)
+	}
+	issues, err := c.SearchIssuesJQL(ctx, jql, jiraLimit, fields)
 	if err != nil {
 		return fmt.Errorf("jql search: %w", err)
 	}
@@ -141,13 +160,17 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 		if is.Fields != nil && is.Fields.Status != nil {
 			status = is.Fields.Status.Name
 		}
+		sprint := "—"
+		if is.Fields != nil {
+			sprint = ui.Truncate(jiraint.FormatSprintColumn(is.Fields), 28)
+		}
 		summary := ""
 		if is.Fields != nil {
 			summary = ui.Truncate(is.Fields.Summary, 70)
 		}
-		rows = append(rows, []string{keyCol, status, assignee, summary})
+		rows = append(rows, []string{keyCol, status, sprint, assignee, summary})
 	}
-	ui.Table(os.Stdout, []string{"KEY", "STATUS", "ASSIGNEE", "SUMMARY"}, rows)
+	ui.Table(os.Stdout, []string{"KEY", "STATUS", "SPRINT", "ASSIGNEE", "SUMMARY"}, rows)
 	return nil
 }
 
@@ -161,6 +184,11 @@ func runJiraView(cmd *cobra.Command, args []string) error {
 	is, _, err := c.Issue.Get(ctx, key, nil)
 	if err != nil {
 		return fmt.Errorf("get %s: %w", key, err)
+	}
+
+	if jiraViewMarkdown {
+		_, err := fmt.Print(jiraint.IssueAsMarkdown(c, is))
+		return err
 	}
 
 	ui.Section(is.Key + " — " + is.Fields.Summary)

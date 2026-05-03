@@ -16,9 +16,10 @@ import (
 // Client wraps a go-jira client with the connected user's email handy.
 type Client struct {
 	*gojira.Client
-	Email   string
-	Project string
-	BaseURL string
+	Email           string
+	Project         string
+	BaseURL         string
+	AssigneeAliases map[string]string
 }
 
 // New constructs a Jira client from saved config + keyring secrets.
@@ -43,10 +44,15 @@ func New(_ context.Context) (*Client, error) {
 	if err != nil {
 		return nil, fmt.Errorf("jira client: %w", err)
 	}
+	aliases := cfg.Jira.AssigneeAliases
+	if aliases == nil {
+		aliases = map[string]string{}
+	}
 	return &Client{
-		Client:  c,
-		Email:   cfg.Jira.Email,
-		Project: cfg.Jira.Project,
-		BaseURL: cfg.Jira.BaseURL,
+		Client:          c,
+		Email:           cfg.Jira.Email,
+		Project:         cfg.Jira.Project,
+		BaseURL:         cfg.Jira.BaseURL,
+		AssigneeAliases: aliases,
 	}, nil
 }

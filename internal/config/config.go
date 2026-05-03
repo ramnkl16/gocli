@@ -24,6 +24,13 @@ type JiraConfig struct {
 	BaseURL string `mapstructure:"base_url" yaml:"base_url"`
 	Email   string `mapstructure:"email"    yaml:"email"`
 	Project string `mapstructure:"project"  yaml:"project"`
+	// SprintField is the Jira custom field id for the Sprint field (Jira Software).
+	// Most Cloud sites use "customfield_10020". Empty disables requesting it.
+	SprintField string `mapstructure:"sprint_field" yaml:"sprint_field"`
+	// AssigneeAliases map short names to Jira assignee identifiers (email, account id,
+	// username, etc.). Used by `jira list --assignee <name>` when names match keys
+	// (ASCII case-insensitive).
+	AssigneeAliases map[string]string `mapstructure:"assignee_aliases" yaml:"assignee_aliases"`
 }
 
 type GitHubConfig struct {

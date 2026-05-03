@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -19,6 +20,7 @@ var providers = map[string]Provider{
 	"script": scriptProvider{},
 	"docker": dockerProvider{},
 	"k8s":    k8sProvider{},
+	"ssh":    sshProvider{},
 }
 
 // Register adds a custom provider (call from another file/package init).
@@ -176,5 +178,69 @@ func (k8sProvider) Run(ctx context.Context, s Step, env map[string]string) error
 	if s.Namespace != "" {
 		args = append(args, "-n", s.Namespace)
 	}
+	if kc := strings.TrimSpace(s.KubeContext); kc != "" {
+		args = append(args, "--context", kc)
+	}
 	return runShell(ctx, "kubectl", args, env, s.WorkDir)
+}
+
+// ── ssh ───────────────────────────────────────────────────────────────
+
+type sshProvider struct{}
+
+func (sshProvider) Run(ctx context.Context, s Step, env map[string]string) error {
+	if _, err := exec.LookPath("ssh"); err != nil {
+		return fmt.Errorf("ssh not found: %w", err)
+	}
+	host := strings.TrimSpace(s.Host)
+	if host == "" {
+		return fmt.Errorf("ssh step %q requires `host`", s.Name)
+	}
+	if strings.TrimSpace(s.Run) == "" {
+		return fmt.Errorf("ssh step %q requires `run`", s.Name)
+	}
+
+	var sshArgs []string
+	sshArgs = append(sshArgs, s.Args...)
+	if p := s.Port; p > 0 && p != 22 {
+		sshArgs = append(sshArgs, "-p", fmt.Sprintf("%d", p))
+	}
+	if id := strings.TrimSpace(s.IdentityFile); id != "" {
+		path, err := expandUserPath(id)
+		if err != nil {
+			return fmt.Errorf("ssh step %q identity_file: %w", s.Name, err)
+		}
+		sshArgs = append(sshArgs, "-i", path)
+	}
+
+	target := host
+	if u := strings.TrimSpace(s.User); u != "" {
+		target = u + "@" + host
+	}
+	sshArgs = append(sshArgs, target, "bash", "-s")
+
+	cmd := exec.CommandContext(ctx, "ssh", sshArgs...)
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	cmd.Stdin = strings.NewReader(s.Run)
+	cmd.Env = mergedEnv(env)
+	return cmd.Run()
+}
+
+func expandUserPath(p string) (string, error) {
+	p = strings.TrimSpace(p)
+	if p == "" {
+		return "", nil
+	}
+	if p == "~" {
+		return os.UserHomeDir()
+	}
+	if strings.HasPrefix(p, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", err
+		}
+		return filepath.Join(home, strings.TrimPrefix(p, "~/")), nil
+	}
+	return filepath.Clean(p), nil
 }
