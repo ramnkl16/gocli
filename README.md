@@ -151,14 +151,6 @@ gocli jira list --assignee bob                # shorthand; see `jira.assignee_al
 gocli jira list -u teammate@corp.com          # `-u` is short for `--assignee` (literal Jira identifier)
 gocli jira list --status "In Review"
 
-Optional assignee shortcuts in config (same file `auth login` writes):
-
-```yaml
-jira:
-  assignee_aliases:
-    bob: bob@corp.com
-    jd: JIRA_ACCOUNT_ID_HERE
-```
 gocli jira view LPAD-26763
 gocli jira view LPAD-26763 --markdown   # or -m; copy output into Cursor Agent
 gocli jira transition LPAD-26763 "In Progress"
