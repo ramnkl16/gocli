@@ -21,6 +21,26 @@ Keychain / Secret Service on Linux). Env vars (`JIRA_API_TOKEN`,
 
 ## Install
 
+### Binary (Windows / macOS / Linux)
+
+Published on [GitHub Releases](https://github.com/yourorg/gocli/releases). Asset names are stable (no version in the filename), so you can use **latest** URLs or the scripts below.
+
+Replace `yourorg/gocli` with your real `owner/repo`, or set `GOCLI_GITHUB_REPO` when using the scripts.
+
+**macOS / Linux** — installs to `~/.local/bin` and appends a PATH line to `~/.zprofile` or `~/.bash_profile` when needed:
+
+```bash
+curl -sSfL https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.sh | bash
+```
+
+**Windows (PowerShell)** — installs to `%LOCALAPPDATA%\Programs\gocli` and prepends your **user** `PATH`:
+
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.ps1) }"
+```
+
+### From source (Go)
+
 Requires Go 1.22+.
 
 ```bash

@@ -33,9 +33,9 @@ archives:
     format_overrides:
       - goos: windows
         format: zip
+    # Omit version so https://github.com/ORG/REPO/releases/latest/download/gocli_<Darwin|Linux|Windows>_<arch>.<ext> stays stable.
     name_template: >-
       {{ .ProjectName }}_
-      {{- .Version }}_
       {{- title .Os }}_
       {{- .Arch }}
       {{- if .Arm }}v{{ .Arm }}{{ end }}
