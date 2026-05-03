@@ -55,6 +55,24 @@ cd gocli
 go build -o gocli .
 ```
 
+### Build `dist/` with GoReleaser
+
+From the repo root, with [GoReleaser](https://goreleaser.com/) installed and on your `PATH`:
+
+```bash
+goreleaser release --snapshot --clean
+```
+
+Writes archives and checksums under **`dist/`** (local snapshot; does not require a release tag).
+
+Compile only (binaries under `dist/` without full release packaging):
+
+```bash
+goreleaser build --snapshot --clean
+```
+
+To **publish** a GitHub Release from your machine, set `GITHUB_TOKEN` and run `goreleaser release --clean` on a tagged commit, or push a tag like `v0.2.0` and let [`.github/workflows/release.yml`](.github/workflows/release.yml) run GoReleaser in CI.
+
 The optional `gh` CLI is used as a fallback for `gh pr-checkout` and
 `gh copilot` shell-outs.
 
