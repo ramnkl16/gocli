@@ -5,55 +5,62 @@
 `gocli` is a single static Go binary that gives developers a unified
 "cockpit" for the work they normally do across many tabs and tools.
 
-## What it does today (MVP)
-
-| Area     | Commands                                                                                  |
-| -------- | ----------------------------------------------------------------------------------------- |
-| Auth     | `auth login`, `auth status`, `auth logout`                                                |
-| Jira     | `jira list`, `jira view`, `jira view --markdown` (paste into Cursor), `jira open`, `jira transition`, `jira branch` (see **Jira: branch** below) |
-| GitHub   | `gh prs`, `gh pr-view <n>`, `gh pr-checkout <n>`, `gh issues`                             |
-| PR       | `pr create` (open a PR on GitHub), `pr review <n>` (AI review via GitHub Copilot / Models) |
-| Deploy   | `deploy list`, `deploy run <pipeline>`, `deploy validate` — driven by `deploy.yml`        |
-
-Tokens are kept in the OS keyring (Windows Credential Manager / macOS
-Keychain / Secret Service on Linux). Env vars (`JIRA_API_TOKEN`,
-`GITHUB_TOKEN`) are an automatic fallback for CI.
-
-## Install
-
-### Binary (Windows / macOS / Linux)
-
-Published on [GitHub Releases](https://github.com/yourorg/gocli/releases). Asset names are stable (no version in the filename), so you can use **latest** URLs or the scripts below.
-
-Replace `yourorg/gocli` with your real `owner/repo`, or set `GOCLI_GITHUB_REPO` when using the scripts.
-
-**macOS / Linux** — installs to `~/.local/bin` and appends a PATH line to `~/.zprofile` or `~/.bash_profile` when needed:
-
-```bash
-curl -sSfL https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.sh | bash
-```
-
-**Windows (PowerShell)** — installs to `%LOCALAPPDATA%\Programs\gocli` and prepends your **user** `PATH`:
-
-```powershell
-iex "& { $(irm https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.ps1) }"
-```
+---
 
 ### From source (Go)
 
 Requires Go 1.22+.
 
+## 🚀 Quick Start
+
+### 1. Install
+
+Published on [GitHub Releases](https://github.com/yourorg/gocli/releases). Asset names are stable (no version in the filename), so you can use **latest** URLs or the scripts below.
+
+Replace `yourorg/gocli` with your real `owner/repo`, or set `GOCLI_GITHUB_REPO` when using the scripts.
+
 ```bash
-go install github.com/yourorg/gocli@latest
+export GOCLI_GITHUB_REPO='yourorg/gocli'
 ```
 
-Or build from a clone:
-
-```bash
-git clone https://github.com/yourorg/gocli
-cd gocli
-go build -o gocli .
+**Windows (PowerShell):**
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.ps1) }"
 ```
+**macOS / Linux:**
+```bash
+curl -sSfL https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.sh | bash
+```
+
+### 2. Authenticate
+Run the login command and follow the prompts to connect your Jira and GitHub accounts:
+```bash
+gocli auth login
+ 
+ -- Jira API token (created at <https://id.atlassian.com/manage-profile/security/api-tokens>).
+ -- Gitub API tocken (created at https://github.com/settings/tokens) with repo scope (selcet the repo checkbox).
+ -- GitHub default repo (Optional).
+ -- AI provider (Optional).
+ -- AI model (Optional).
+ 
+
+gocli auth status
+ -- status should be like this:
+
+ SETTING             │ VALUE                              │ OK  
+─────────────────────┼────────────────────────────────────┼─────
+ Jira URL            │ https://sample.atlassian.net       │ yes
+ Jira email          │ [EMAIL_ADDRESS]                    │ yes
+ Jira token          │ JIRA_API_TOKEN                     │ yes
+ GitHub user         │ GitHub_User                        │ yes
+ GitHub default repo │                                    │ no
+ GitHub token        │ GITHUB_TOKEN                       │ yes
+ AI provider         │ github-models                      │ yes
+ AI model            │ openai/gpt-4o-mini                 │ yes
+ 
+```
+
+---
 
 ### Build `dist/` with GoReleaser
 
@@ -76,49 +83,40 @@ To **publish** a GitHub Release from your machine, set `GITHUB_TOKEN` and run `g
 The optional `gh` CLI is used as a fallback for `gh pr-checkout` and
 `gh copilot` shell-outs.
 
-## First run
+## 🔄 The Developer Loop
 
-```bash
-gocli auth login
-gocli auth status
-```
+This is the recommended workflow to move faster:
 
-`auth login` collects:
+1.  **Pick Work**: `gocli jira list` (Find your open tickets)
+2.  **Start Coding**: `gocli jira branch KAN-224 --type fea` (Creates git branch & moves ticket to "In Progress")
+3.  **Create PR**: `gocli pr create` (Creates GitHub PR from your commits)
+4.  **AI Review**: `gocli pr review 482` (Get instant AI feedback on your changes)
+5.  **Deploy**: `gocli deploy run staging` (Run your defined deployment pipeline)
 
-- **Jira** — base URL (e.g. `https://acme.atlassian.net`), email, project
-  key, API token (created at <https://id.atlassian.com/manage-profile/security/api-tokens>).
-  The **Sprint** column uses your Jira site’s **Sprint** custom field. The
-  field id is **discovered automatically** (GET `/rest/api/2/field`, first
-  custom field named “Sprint”). Override in `~/.gocli/config.yaml` as
-  `jira.sprint_field: customfield_XXXXX`, or `GOCLI_JIRA_SPRINT_FIELD`. Set
-  `jira.sprint_field: auto` or leave it unset to keep discovery; use `none` in
-  the env to skip requesting the field.
-- **GitHub** — username, default repo (`owner/name`, optional), personal
-  access token (scopes: `repo`, `read:org`).
-- **AI provider** — `github-models` (default; uses your GitHub token
-  against <https://models.github.ai>) or `copilot` (shells out to the
-  `gh copilot` extension).
+---
 
-Config lives at `~/.gocli/config.yaml` (override with `GOCLI_CONFIG`).
-Secrets never touch disk.
+## 📖 Command Reference
 
-### Project-local environment with `.env`
+| Area | Command | Description |
+| :--- | :--- | :--- |
+| **Jira** | `jira list` | List your active issues |
+| | `jira view <KEY>` | View issue details & description |
+| | `jira open <KEY>` | Open issue in browser |
+| | `jira transition <KEY> <STATUS>` | Move ticket to Done, Review, etc. |
+| **GitHub** | `gh prs` | List open PRs in current repo |
+| | `gh pr-checkout <N>` | Checkout a PR locally |
+| **AI** | `pr review <N>` | Get AI feedback on a PR |
+| **Deploy** | `deploy run <NAME>` | Execute a pipeline from `deploy.yml` |
 
-For per-project setup (or for CI / containers where there is no OS
-keyring), `gocli` automatically loads `.env` and `.env.local` from the
-current directory at startup. Real OS environment variables always win
-over `.env` values.
+---
 
-```bash
-cp .env.example .env       # macOS / Linux
-Copy-Item .env.example .env # PowerShell
-# edit .env and fill in JIRA_API_TOKEN / GITHUB_TOKEN
-gocli auth status
-```
+## ⚙️ Configuration
 
-Both `.env` and `.env.local` are gitignored (only `.env.example` is
-committed). Set `GOCLI_NO_DOTENV=1` in your shell to disable `.env`
-loading entirely.
+- **Config File**: `~/.gocli/config.yaml` (Base URL, Email, Project keys)
+- **Secrets**: Stored securely in your OS Keyring (Windows Credential Manager / Keychain).
+- **Project Overrides**: You can use a local `.env` file for project-specific `JIRA_API_TOKEN` or `GITHUB_TOKEN`.
+
+---
 
 ## Jira: `branch`
 
@@ -143,24 +141,24 @@ Refuses a dirty working tree in that repo unless `--allow-dirty`.
 Use `--dry-run` to print the branch name without touching git or Jira, or
 `--no-transition` to only create the branch.
 
-## Examples
+## 💡 Examples
 
 ```bash
-gocli jira list                               # my open issues (includes SPRINT if Jira Software sprints are present)
-gocli jira list --assignee bob                # shorthand; see `jira.assignee_aliases` in ~/.gocli/config.yaml
-gocli jira list -u teammate@corp.com          # `-u` is short for `--assignee` (literal Jira identifier)
+gocli jira list                               # my open issues
+gocli jira list --assignee bob                # shorthand; see `jira.assignee_aliases` in config
+gocli jira list -u teammate@corp.com          # filter by literal Jira identifier
 gocli jira list --status "In Review"
 
 gocli jira view LPAD-26763
-gocli jira view LPAD-26763 --markdown   # or -m; copy output into Cursor Agent
+gocli jira view LPAD-26763 --markdown         # or -m; copy output into Cursor Agent
 gocli jira transition LPAD-26763 "In Progress"
 
-# create branch bug-LPAD-26763-…, move ticket to "In Progress", git checkout -b
+# create branch bug-LPAD-26763-..., move ticket to "In Progress", git checkout -b
 gocli jira branch LPAD-26763 --type bug
 gocli jira branch LPAD-26763 --type fea --to-status "In Progress"
 gocli jira branch LPAD-26763 --type chg --dry-run   # show branch name only
-gocli jira branch LPAD-26763 --type bug --no-transition   # branch only, no Jira
-gocli jira branch LPAD-26763 --type fea --workdir C:\path\to\clone   # or: -C C:\path\to\clone
+gocli jira branch LPAD-26763 --type bug --no-transition
+gocli jira branch LPAD-26763 --type fea -C C:\path\to\clone
 
 gocli gh prs                                  # PRs in current repo
 gocli gh prs --mine --state open
@@ -176,7 +174,6 @@ gocli deploy list -f examples/deploy.yml
 gocli deploy run staging --dry-run
 gocli deploy run docker-release
 ```
-
 ## `deploy.yml`
 
 A pipeline is an ordered list of steps. Each step has a `type` handled
@@ -202,3 +199,12 @@ pick ticket  →  branch / PR  →  AI review  →  deploy  →  transition tick
 ```
 
 …all without leaving your terminal.
+---
+
+## 🛠️ Build from Source
+Requires Go 1.22+.
+```bash
+git clone https://github.com/yourorg/gocli
+cd gocli
+go build -o gocli .
+```
