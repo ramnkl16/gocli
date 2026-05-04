@@ -7,7 +7,7 @@
 
 set -euo pipefail
 
-REPO="${GOCLI_GITHUB_REPO:-yourorg/gocli}"
+REPO="${GOCLI_GITHUB_REPO:-ramnkl16/gocli}"
 BASE="https://github.com/${REPO}"
 
 case "$(uname -s)" in
