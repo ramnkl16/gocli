@@ -5,92 +5,7 @@
 `gocli` is a single static Go binary that gives developers a unified
 "cockpit" for the work they normally do across many tabs and tools.
 
-## What it does today (MVP)
-
-| Area     | Commands                                                                                  |
-| -------- | ----------------------------------------------------------------------------------------- |
-| Auth     | `auth login`, `auth status`, `auth logout`                                                |
-| Jira     | `jira list`, `jira view`, `jira view --markdown` (paste into Cursor), `jira open`, `jira transition`, `jira branch` (see **Jira: branch** below) |
-| GitHub   | `gh prs`, `gh pr-view <n>`, `gh pr-checkout <n>`, `gh issues`                             |
-| PR       | `pr create` (open a PR on GitHub), `pr review <n>` (AI review via GitHub Copilot / Models) |
-| Deploy   | `deploy list`, `deploy run <pipeline>`, `deploy validate` — driven by `deploy.yml`        |
-| Teams    | `teams notify dev-complete`, `teams notify deployment`; `jira transition … --notify-devops`; after a successful `deploy run`, a deployment message if a deploy webhook is configured |
-
-Tokens are kept in the OS keyring (Windows Credential Manager / macOS
-Keychain / Secret Service on Linux). Env vars (`JIRA_API_TOKEN`,
-`GITHUB_TOKEN`) are an automatic fallback for CI.
-
-## Getting started
-
-Follow these steps on **macOS**, **Windows**, or **Linux**. Published
-binaries live on [GitHub Releases](https://github.com/ramnkl16/gocli/releases);
-asset names are stable (no version in the filename), so **latest** download
-URLs and the scripts below keep working.
-
-Replace `ramnkl16/gocli` in the URLs below with your real `owner/repo`, or set
-`GOCLI_GITHUB_REPO` when you run an installer script so it downloads from the
-correct repo.
-
-### Step 1 — Install gocli
-
-#### macOS
-
-1. Open **Terminal** (e.g. Finder → Applications → Utilities → Terminal).
-2. Run the installer (installs to `~/.local/bin` and appends a `PATH` line to
-   `~/.zprofile` or `~/.bash_profile` when needed):
-
-   ```bash
-   curl -sSfL https://raw.githubusercontent.com/ramnkl16/gocli/main/scripts/install.sh | bash
-   ```
-
-3. If the installer said it updated your profile, open a **new** terminal or
-   reload it, for example:
-
-   ```bash
-   source ~/.zprofile
-   ```
-
-   Use `~/.bash_profile` instead if that is what the installer mentioned for bash.
-
-4. Verify:
-
-   ```bash
-   gocli version
-   ```
-
-**Use another GitHub repo** for releases:
-
-```bash
-export GOCLI_GITHUB_REPO=owner/repo
-curl -sSfL https://raw.githubusercontent.com/ramnkl16/gocli/main/scripts/install.sh | bash
-```
-
-#### Windows
-
-1. Open **PowerShell** (Start → type *PowerShell* → open **Windows PowerShell**).
-   Administrator rights are not required for a per-user install.
-2. Run:
-
-   ```powershell
-   iex "& { $(irm https://raw.githubusercontent.com/ramnkl16/gocli/main/scripts/install.ps1) }"
-   ```
-
-   This installs `gocli.exe` under `%LOCALAPPDATA%\Programs\gocli` and prepends
-   that folder to your **user** `PATH`.
-
-3. **Close PowerShell completely** and open a new window so `PATH` updates.
-4. Verify:
-
-   ```powershell
-   gocli version
-   ```
-
-**Use another GitHub repo** for releases:
-
-```powershell
-$env:GOCLI_GITHUB_REPO = 'owner/repo'
-iex "& { $(irm https://raw.githubusercontent.com/ramnkl16/gocli/main/scripts/install.ps1) }"
-```
+---
 
 **If that one-liner is blocked** (policy, proxy, etc.): open
 [Releases](https://github.com/ramnkl16/gocli/releases/latest), download
@@ -209,14 +124,59 @@ Requires Go 1.22+.
 ```bash
 go install github.com/ramnkl16/gocli@latest
 ```
+## 🚀 Quick Start
 
-Or build from a clone:
+### 1. Install
+
+Published on [GitHub Releases](https://github.com/yourorg/gocli/releases). Asset names are stable (no version in the filename), so you can use **latest** URLs or the scripts below.
+
+Replace `yourorg/gocli` with your real `owner/repo`, or set `GOCLI_GITHUB_REPO` when using the scripts.
 
 ```bash
 git clone https://github.com/ramnkl16/gocli
 cd gocli
 go build -o gocli .
+export GOCLI_GITHUB_REPO='yourorg/gocli'
 ```
+
+**Windows (PowerShell):**
+```powershell
+iex "& { $(irm https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.ps1) }"
+```
+**macOS / Linux:**
+```bash
+curl -sSfL https://raw.githubusercontent.com/yourorg/gocli/main/scripts/install.sh | bash
+```
+
+### 2. Authenticate
+Run the login command and follow the prompts to connect your Jira and GitHub accounts:
+```bash
+gocli auth login
+ 
+ -- Jira API token (created at <https://id.atlassian.com/manage-profile/security/api-tokens>).
+ -- Gitub API tocken (created at https://github.com/settings/tokens) with repo scope (selcet the repo checkbox).
+ -- GitHub default repo (Optional).
+ -- AI provider (Optional).
+ -- AI model (Optional).
+ 
+
+gocli auth status
+ -- status should be like this:
+
+ SETTING             │ VALUE                              │ OK  
+─────────────────────┼────────────────────────────────────┼─────
+ Jira URL            │ https://sample.atlassian.net       │ yes
+ Jira email          │ [EMAIL_ADDRESS]                    │ yes
+ Jira token          │ JIRA_API_TOKEN                     │ yes
+ GitHub user         │ GitHub_User                        │ yes
+ GitHub default repo │                                    │ no
+ GitHub token        │ GITHUB_TOKEN                       │ yes
+ AI provider         │ github-models                      │ yes
+ AI model            │ openai/gpt-4o-mini                 │ yes
+ 
+```
+
+---
 
 ### Build `dist/` with GoReleaser
 
@@ -235,6 +195,44 @@ goreleaser build --snapshot --clean
 ```
 
 To **publish** a GitHub Release from your machine, set `GITHUB_TOKEN` and run `goreleaser release --clean` on a tagged commit, or push a tag like `v0.2.0` and let [`.github/workflows/release.yml`](.github/workflows/release.yml) run GoReleaser in CI.
+
+The optional `gh` CLI is used as a fallback for `gh pr-checkout` and
+`gh copilot` shell-outs.
+
+## 🔄 The Developer Loop
+
+This is the recommended workflow to move faster:
+
+1.  **Pick Work**: `gocli jira list` (Find your open tickets)
+2.  **Start Coding**: `gocli jira branch KAN-224 --type fea` (Creates git branch & moves ticket to "In Progress")
+3.  **Create PR**: `gocli pr create` (Creates GitHub PR from your commits)
+4.  **AI Review**: `gocli pr review 482` (Get instant AI feedback on your changes)
+5.  **Deploy**: `gocli deploy run staging` (Run your defined deployment pipeline)
+
+---
+
+## 📖 Command Reference
+
+| Area | Command | Description |
+| :--- | :--- | :--- |
+| **Jira** | `jira list` | List your active issues |
+| | `jira view <KEY>` | View issue details & description |
+| | `jira open <KEY>` | Open issue in browser |
+| | `jira transition <KEY> <STATUS>` | Move ticket to Done, Review, etc. |
+| **GitHub** | `gh prs` | List open PRs in current repo |
+| | `gh pr-checkout <N>` | Checkout a PR locally |
+| **AI** | `pr review <N>` | Get AI feedback on a PR |
+| **Deploy** | `deploy run <NAME>` | Execute a pipeline from `deploy.yml` |
+
+---
+
+## ⚙️ Configuration
+
+- **Config File**: `~/.gocli/config.yaml` (Base URL, Email, Project keys)
+- **Secrets**: Stored securely in your OS Keyring (Windows Credential Manager / Keychain).
+- **Project Overrides**: You can use a local `.env` file for project-specific `JIRA_API_TOKEN` or `GITHUB_TOKEN`.
+
+---
 
 ## Jira: `branch`
 
@@ -259,24 +257,24 @@ Refuses a dirty working tree in that repo unless `--allow-dirty`.
 Use `--dry-run` to print the branch name without touching git or Jira, or
 `--no-transition` to only create the branch.
 
-## Examples
+## 💡 Examples
 
 ```bash
-gocli jira list                               # my open issues (includes SPRINT if Jira Software sprints are present)
-gocli jira list --assignee bob                # shorthand; see `jira.assignee_aliases` in ~/.gocli/config.yaml
-gocli jira list -u teammate@corp.com          # `-u` is short for `--assignee` (literal Jira identifier)
+gocli jira list                               # my open issues
+gocli jira list --assignee bob                # shorthand; see `jira.assignee_aliases` in config
+gocli jira list -u teammate@corp.com          # filter by literal Jira identifier
 gocli jira list --status "In Review"
 
 gocli jira view LPAD-26763
-gocli jira view LPAD-26763 --markdown   # or -m; copy output into Cursor Agent
+gocli jira view LPAD-26763 --markdown         # or -m; copy output into Cursor Agent
 gocli jira transition LPAD-26763 "In Progress"
 
-# create branch bug-LPAD-26763-…, move ticket to "In Progress", git checkout -b
+# create branch bug-LPAD-26763-..., move ticket to "In Progress", git checkout -b
 gocli jira branch LPAD-26763 --type bug
 gocli jira branch LPAD-26763 --type fea --to-status "In Progress"
 gocli jira branch LPAD-26763 --type chg --dry-run   # show branch name only
-gocli jira branch LPAD-26763 --type bug --no-transition   # branch only, no Jira
-gocli jira branch LPAD-26763 --type fea --workdir C:\path\to\clone   # or: -C C:\path\to\clone
+gocli jira branch LPAD-26763 --type bug --no-transition
+gocli jira branch LPAD-26763 --type fea -C C:\path\to\clone
 
 gocli gh prs                                  # PRs in current repo
 gocli gh prs --mine --state open
@@ -367,3 +365,12 @@ pick ticket  →  branch / PR  →  AI review  →  deploy  →  Teams notify  �
 ```
 
 …all without leaving your terminal.
+---
+
+## 🛠️ Build from Source
+Requires Go 1.22+.
+```bash
+git clone https://github.com/yourorg/gocli
+cd gocli
+go build -o gocli .
+```

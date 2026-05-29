@@ -8,7 +8,7 @@ $ErrorActionPreference = 'Stop'
 
 $Repo = $env:GOCLI_GITHUB_REPO
 if ([string]::IsNullOrWhiteSpace($Repo)) {
-    $Repo = 'yourorg/gocli'
+    $Repo = 'ramnkl16/gocli'
 }
 
 $Arch = if ($env:PROCESSOR_ARCHITECTURE -eq 'ARM64') { 'arm64' } else { 'amd64' }
