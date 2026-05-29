@@ -13,17 +13,20 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yourorg/gocli/internal/config"
 	jiraint "github.com/yourorg/gocli/internal/jira"
+	"github.com/yourorg/gocli/internal/teams"
 	"github.com/yourorg/gocli/internal/ui"
 )
 
 var (
-	jiraJQL           string
-	jiraLimit         int
-	jiraMine          bool
-	jiraStatus        string
-	jiraAssignee      string
-	jiraViewMarkdown  bool
+	jiraJQL                    string
+	jiraLimit                  int
+	jiraMine                   bool
+	jiraStatus                 string
+	jiraAssignee               string
+	jiraViewMarkdown           bool
+	jiraTransitionNotifyDevOps bool
 )
 
 var jiraCmd = &cobra.Command{
@@ -96,6 +99,8 @@ func init() {
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchDryRun, "dry-run", false, "print branch name and actions only")
 
 	jiraViewCmd.Flags().BoolVarP(&jiraViewMarkdown, "markdown", "m", false, "print issue as markdown (e.g. paste into Cursor)")
+
+	jiraTransitionCmd.Flags().BoolVar(&jiraTransitionNotifyDevOps, "notify-devops", false, "after transition, post to Teams devops webhook (if configured)")
 
 	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraBranchCmd)
 }
@@ -233,6 +238,21 @@ func runJiraTransition(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	fmt.Println(ui.OK(fmt.Sprintf("✓ %s → %s", key, to)))
+	if jiraTransitionNotifyDevOps {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		url := teams.DevOpsWebhookURL(cfg)
+		if url == "" {
+			return fmt.Errorf("--notify-devops: set teams.devops_webhook in config or GOCLI_TEAMS_DEVOPS_WEBHOOK")
+		}
+		msg := fmt.Sprintf("Jira %s moved to %q — development handoff for DevOps.", key, to)
+		if err := teams.PostMessage(ctx, url, msg); err != nil {
+			return err
+		}
+		fmt.Println(ui.OK("✓ Sent Teams message (DevOps)"))
+	}
 	return nil
 }
 

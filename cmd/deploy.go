@@ -8,7 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/yourorg/gocli/internal/config"
 	"github.com/yourorg/gocli/internal/deploy"
+	"github.com/yourorg/gocli/internal/teams"
 	"github.com/yourorg/gocli/internal/ui"
 )
 
@@ -76,7 +78,26 @@ func runDeployRun(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	r := deploy.New(s, deployDryRun)
-	return r.Run(context.Background(), args[0])
+	if err := r.Run(context.Background(), args[0]); err != nil {
+		return err
+	}
+	if deployDryRun {
+		return nil
+	}
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	url := teams.DeployWebhookURL(cfg)
+	if url == "" {
+		return nil
+	}
+	msg := fmt.Sprintf("Deployment completed: pipeline %q (%s)", args[0], deployFile)
+	if err := teams.PostMessage(context.Background(), url, msg); err != nil {
+		return fmt.Errorf("teams: %w", err)
+	}
+	fmt.Fprintln(os.Stdout, ui.OK("✓ Sent Teams message (deployment)"))
+	return nil
 }
 
 func runDeployValidate(cmd *cobra.Command, _ []string) error {

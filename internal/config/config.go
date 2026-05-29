@@ -18,6 +18,7 @@ type Config struct {
 	Jira   JiraConfig   `mapstructure:"jira"   yaml:"jira"`
 	GitHub GitHubConfig `mapstructure:"github" yaml:"github"`
 	AI     AIConfig     `mapstructure:"ai"     yaml:"ai"`
+	Teams  TeamsConfig  `mapstructure:"teams"  yaml:"teams"`
 }
 
 type JiraConfig struct {
@@ -43,6 +44,15 @@ type AIConfig struct {
 	// (calls https://models.github.ai with the GitHub token).
 	Provider string `mapstructure:"provider" yaml:"provider"`
 	Model    string `mapstructure:"model"    yaml:"model"`
+}
+
+// TeamsConfig holds Microsoft Teams Incoming Webhook URLs (not secrets in repo:
+// prefer env GOCLI_TEAMS_DEVOPS_WEBHOOK / GOCLI_TEAMS_DEPLOY_WEBHOOK in CI).
+type TeamsConfig struct {
+	// DevOpsWebhook is used for “development complete” style messages to the DevOps group.
+	DevOpsWebhook string `mapstructure:"devops_webhook" yaml:"devops_webhook"`
+	// DeployWebhook is used when a deploy pipeline finishes successfully.
+	DeployWebhook string `mapstructure:"deploy_webhook" yaml:"deploy_webhook"`
 }
 
 // Dir returns the directory holding gocli's config and caches.
@@ -116,5 +126,6 @@ func Save(c *Config) error {
 	v.Set("jira", c.Jira)
 	v.Set("github", c.GitHub)
 	v.Set("ai", c.AI)
+	v.Set("teams", c.Teams)
 	return v.WriteConfigAs(p)
 }
