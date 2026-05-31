@@ -169,13 +169,17 @@ func runJiraList(cmd *cobra.Command, _ []string) error {
 		if is.Fields != nil {
 			sprint = ui.Truncate(jiraint.FormatSprintColumn(is.Fields), 28)
 		}
+		priority := "—"
+		if is.Fields != nil && is.Fields.Priority != nil {
+			priority = is.Fields.Priority.Name
+		}
 		summary := ""
 		if is.Fields != nil {
 			summary = ui.Truncate(is.Fields.Summary, 70)
 		}
-		rows = append(rows, []string{keyCol, status, sprint, assignee, summary})
+		rows = append(rows, []string{keyCol, status, sprint, assignee, priority, summary})
 	}
-	ui.Table(os.Stdout, []string{"KEY", "STATUS", "SPRINT", "ASSIGNEE", "SUMMARY"}, rows)
+	ui.Table(os.Stdout, []string{"KEY", "STATUS", "SPRINT", "ASSIGNEE", "PRIORITY", "SUMMARY"}, rows)
 	return nil
 }
 
