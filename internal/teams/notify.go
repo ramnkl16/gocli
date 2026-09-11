@@ -12,12 +12,31 @@ import (
 	"time"
 )
 
-// SimplePayload is the JSON shape accepted by classic Teams Incoming Webhooks.
-type SimplePayload struct {
-	Text string `json:"text"`
+// MessagePayload is the adaptive card envelope accepted by Teams Workflows webhooks.
+type MessagePayload struct {
+	Type        string           `json:"type"`
+	Attachments []CardAttachment `json:"attachments"`
 }
 
-// PostMessage POSTs plain text to a webhook URL.
+type CardAttachment struct {
+	ContentType string       `json:"contentType"`
+	Content     AdaptiveCard `json:"content"`
+}
+
+type AdaptiveCard struct {
+	Schema  string      `json:"$schema"`
+	Type    string      `json:"type"`
+	Version string      `json:"version"`
+	Body    []TextBlock `json:"body"`
+}
+
+type TextBlock struct {
+	Type string `json:"type"`
+	Text string `json:"text"`
+	Wrap bool   `json:"wrap"`
+}
+
+// PostMessage POSTs a plain-text adaptive card to a Teams webhook URL.
 func PostMessage(ctx context.Context, webhookURL, text string) error {
 	webhookURL = strings.TrimSpace(webhookURL)
 	if webhookURL == "" {
@@ -28,7 +47,26 @@ func PostMessage(ctx context.Context, webhookURL, text string) error {
 		return fmt.Errorf("message text is empty")
 	}
 
-	body, err := json.Marshal(SimplePayload{Text: text})
+	body, err := json.Marshal(MessagePayload{
+		Type: "message",
+		Attachments: []CardAttachment{
+			{
+				ContentType: "application/vnd.microsoft.card.adaptive",
+				Content: AdaptiveCard{
+					Schema:  "http://adaptivecards.io/schemas/adaptive-card.json",
+					Type:    "AdaptiveCard",
+					Version: "1.2",
+					Body: []TextBlock{
+						{
+							Type: "TextBlock",
+							Text: text,
+							Wrap: true,
+						},
+					},
+				},
+			},
+		},
+	})
 	if err != nil {
 		return err
 	}

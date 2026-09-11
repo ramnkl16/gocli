@@ -11,7 +11,7 @@ import (
 
 func TestPostMessage_OK(t *testing.T) {
 	t.Parallel()
-	var got SimplePayload
+	var got MessagePayload
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
 			t.Fatalf("method %s", r.Method)
@@ -33,8 +33,24 @@ func TestPostMessage_OK(t *testing.T) {
 	if err := PostMessage(context.Background(), srv.URL, "hello"); err != nil {
 		t.Fatal(err)
 	}
-	if got.Text != "hello" {
-		t.Fatalf("text %q", got.Text)
+	if got.Type != "message" {
+		t.Fatalf("type %q", got.Type)
+	}
+	if len(got.Attachments) != 1 {
+		t.Fatalf("attachments len %d", len(got.Attachments))
+	}
+	attachment := got.Attachments[0]
+	if attachment.ContentType != "application/vnd.microsoft.card.adaptive" {
+		t.Fatalf("content type %q", attachment.ContentType)
+	}
+	if attachment.Content.Type != "AdaptiveCard" {
+		t.Fatalf("card type %q", attachment.Content.Type)
+	}
+	if len(attachment.Content.Body) != 1 {
+		t.Fatalf("body len %d", len(attachment.Content.Body))
+	}
+	if attachment.Content.Body[0].Text != "hello" {
+		t.Fatalf("text %q", attachment.Content.Body[0].Text)
 	}
 }
 
