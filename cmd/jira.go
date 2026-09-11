@@ -14,6 +14,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/yourorg/gocli/internal/config"
+	cursorint "github.com/yourorg/gocli/internal/cursor"
+	"github.com/yourorg/gocli/internal/email"
 	jiraint "github.com/yourorg/gocli/internal/jira"
 	"github.com/yourorg/gocli/internal/teams"
 	"github.com/yourorg/gocli/internal/ui"
@@ -27,6 +29,7 @@ var (
 	jiraAssignee               string
 	jiraViewMarkdown           bool
 	jiraTransitionNotifyDevOps bool
+	jiraTransitionNotifyEmail  bool
 )
 
 var jiraCmd = &cobra.Command{
@@ -84,6 +87,38 @@ git checkout -b. By default the git repository is the current directory; use
 	RunE: runJiraBranch,
 }
 
+var (
+	jiraImplementType         string
+	jiraImplementToStatus     string
+	jiraImplementWorkdir      string
+	jiraImplementAllowDirty   bool
+	jiraImplementNoTransition bool
+	jiraImplementDryRun       bool
+	jiraImplementPrintPrompt  bool
+	jiraImplementNoAgent      bool
+	jiraImplementNoCommit     bool
+	jiraImplementNoPush       bool
+	jiraImplementPushRemote   string
+	jiraImplementCommitMsg    string
+)
+
+var jiraImplementCmd = &cobra.Command{
+	Use:   "implement <ISSUE-KEY>",
+	Short: "Create a branch and run Cursor Agent to implement a Jira ticket",
+	Long: `Fetches the Jira issue title and acceptance criteria, creates a feature
+branch (same naming as jira branch), transitions the ticket to In Progress,
+runs the Cursor Agent CLI non-interactively, then commits and pushes the branch.
+
+Requires the Cursor Agent CLI (agent) on PATH. Install:
+  irm 'https://cursor.com/install?win32=true' | iex   # Windows
+  curl https://cursor.com/install -fsS | bash         # macOS/Linux
+
+Use --print-prompt to preview the agent prompt, or --dry-run to preview git/Jira
+actions without running the agent.`,
+	Args: cobra.ExactArgs(1),
+	RunE: runJiraImplement,
+}
+
 func init() {
 	jiraListCmd.Flags().StringVar(&jiraJQL, "jql", "", "raw JQL (overrides --mine / --status / --assignee)")
 	jiraListCmd.Flags().BoolVar(&jiraMine, "mine", true, "only issues assigned to me (--assignee disables this)")
@@ -98,11 +133,25 @@ func init() {
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchNoTransition, "no-transition", false, "only create and checkout the branch; do not change Jira")
 	jiraBranchCmd.Flags().BoolVar(&jiraBranchDryRun, "dry-run", false, "print branch name and actions only")
 
+	jiraImplementCmd.Flags().StringVar(&jiraImplementType, "type", "", "ticket type prefix: bug | fea | chg (required)")
+	jiraImplementCmd.Flags().StringVar(&jiraImplementToStatus, "to-status", "In Progress", "Jira status to transition to before implementation")
+	jiraImplementCmd.Flags().StringVarP(&jiraImplementWorkdir, "workdir", "C", "", "path to the local git repository (default: current directory; same as `git -C`")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementAllowDirty, "allow-dirty", false, "allow a dirty git working tree before creating the branch")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementNoTransition, "no-transition", false, "skip Jira status transition")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementDryRun, "dry-run", false, "print branch name and actions only; do not run agent")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementPrintPrompt, "print-prompt", false, "print the agent prompt and exit")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementNoAgent, "no-agent", false, "create branch only; do not invoke Cursor Agent")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementNoCommit, "no-commit", false, "do not auto-commit after the agent finishes")
+	jiraImplementCmd.Flags().BoolVar(&jiraImplementNoPush, "no-push", false, "do not push the branch to the remote")
+	jiraImplementCmd.Flags().StringVar(&jiraImplementPushRemote, "push-remote", "origin", "remote to push to")
+	jiraImplementCmd.Flags().StringVar(&jiraImplementCommitMsg, "commit-message", "", "commit message after agent (default: type(KEY): summary)")
+
 	jiraViewCmd.Flags().BoolVarP(&jiraViewMarkdown, "markdown", "m", false, "print issue as markdown (e.g. paste into Cursor)")
 
 	jiraTransitionCmd.Flags().BoolVar(&jiraTransitionNotifyDevOps, "notify-devops", false, "after transition, post to Teams devops webhook (if configured)")
+	jiraTransitionCmd.Flags().BoolVar(&jiraTransitionNotifyEmail, "notify-email", false, "after transition, email DevOps recipient (if configured)")
 
-	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraBranchCmd)
+	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraBranchCmd, jiraImplementCmd)
 }
 
 func runJiraList(cmd *cobra.Command, _ []string) error {
@@ -257,6 +306,26 @@ func runJiraTransition(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println(ui.OK("✓ Sent Teams message (DevOps)"))
 	}
+	if jiraTransitionNotifyEmail {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+		recipient := email.DevOpsTo(cfg)
+		if recipient == "" {
+			return fmt.Errorf("--notify-email: set email.devops_to in config or GOCLI_EMAIL_DEVOPS_TO")
+		}
+		smtp, err := email.ResolveSMTPSettings(cfg)
+		if err != nil {
+			return err
+		}
+		subject := fmt.Sprintf("Jira %s → %s", key, to)
+		msg := fmt.Sprintf("Jira %s moved to %q — development handoff for DevOps.", key, to)
+		if err := email.SendPlainText(ctx, smtp, recipient, subject, msg); err != nil {
+			return err
+		}
+		fmt.Println(ui.OK("✓ Sent email (DevOps)"))
+	}
 	return nil
 }
 
@@ -337,6 +406,159 @@ func runJiraBranch(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("git checkout -b: %w", err)
 	}
 	fmt.Println(ui.OK("✓ checked out " + branch + " in " + repoDisplay))
+	return nil
+}
+
+func runJiraImplement(cmd *cobra.Command, args []string) error {
+	typ := strings.ToLower(strings.TrimSpace(jiraImplementType))
+	if typ == "" {
+		return fmt.Errorf("required flag: --type (bug|fea|chg)")
+	}
+	if typ != "bug" && typ != "fea" && typ != "chg" {
+		return fmt.Errorf(`--type must be one of: bug, fea, chg, got %q`, typ)
+	}
+	key := strings.TrimSpace(args[0])
+
+	ctx := context.Background()
+	c, err := jiraint.New(ctx)
+	if err != nil {
+		return err
+	}
+	is, _, err := c.Issue.Get(ctx, key, nil)
+	if err != nil {
+		return fmt.Errorf("get %s: %w", key, err)
+	}
+	summary := ""
+	if is.Fields != nil {
+		summary = is.Fields.Summary
+	}
+	branch := jiraint.BranchNameForWorkflow(typ, is.Key, summary)
+	prompt := jiraint.IssueImplementPrompt(c, is)
+
+	if jiraImplementPrintPrompt {
+		_, err := fmt.Print(prompt)
+		return err
+	}
+
+	repoDir, err := resolveGitWorkdir(jiraImplementWorkdir)
+	if err != nil {
+		return err
+	}
+	repoDisplay := repoDir
+	if repoDisplay == "" {
+		if wd, err := os.Getwd(); err == nil {
+			repoDisplay = wd
+		} else {
+			repoDisplay = "."
+		}
+	}
+	if jiraImplementDryRun {
+		fmt.Println(ui.Dim("dry-run: would run: git -C " + repoDisplay + " checkout -b " + branch))
+		if !jiraImplementNoTransition {
+			fmt.Println(ui.Dim("dry-run: would transition " + is.Key + ` to "` + jiraImplementToStatus + `"`))
+		}
+		if !jiraImplementNoAgent {
+			fmt.Println(ui.Dim("dry-run: would run Cursor Agent in " + repoDisplay))
+		}
+		if !jiraImplementNoCommit {
+			fmt.Println(ui.Dim("dry-run: would commit changes after agent"))
+		}
+		if !jiraImplementNoPush {
+			fmt.Println(ui.Dim("dry-run: would push to " + jiraImplementPushRemote))
+		}
+		fmt.Println(branch)
+		return nil
+	}
+
+	if err := gitInWorkTree(repoDir); err != nil {
+		return err
+	}
+	if !jiraImplementAllowDirty {
+		if dirty, err := gitIsDirty(repoDir); err != nil {
+			return err
+		} else if dirty {
+			return fmt.Errorf("working tree is dirty; commit/stash or pass --allow-dirty")
+		}
+	}
+	exists, err := localGitBranchExists(repoDir, branch)
+	if err != nil {
+		return err
+	}
+	if exists {
+		return fmt.Errorf("branch %q already exists", branch)
+	}
+
+	if !jiraImplementNoTransition {
+		to, err := c.TransitionTo(ctx, is.Key, jiraImplementToStatus)
+		if err != nil {
+			return err
+		}
+		fmt.Println(ui.OK("✓ Jira " + is.Key + " → " + to))
+	}
+
+	xc := gitCmd(repoDir, "checkout", "-b", branch)
+	xc.Stdout, xc.Stderr, xc.Stdin = os.Stdout, os.Stderr, os.Stdin
+	if err := xc.Run(); err != nil {
+		return fmt.Errorf("git checkout -b: %w", err)
+	}
+	fmt.Println(ui.OK("✓ checked out " + branch + " in " + repoDisplay))
+
+	if jiraImplementNoAgent {
+		return nil
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return err
+	}
+	absWorkdir := repoDisplay
+	if repoDir != "" {
+		absWorkdir = repoDir
+	} else if abs, err := filepath.Abs(absWorkdir); err == nil {
+		absWorkdir = abs
+	}
+	ui.Section("Running Cursor Agent")
+	if err := cursorint.Run(ctx, cursorint.RunInput{
+		Prompt:    prompt,
+		Workdir:   absWorkdir,
+		Model:     cfg.Cursor.Model,
+		ExtraArgs: cfg.Cursor.Args,
+	}); err != nil {
+		return err
+	}
+
+	if !jiraImplementNoCommit {
+		dirty, err := gitIsDirty(repoDir)
+		if err != nil {
+			return err
+		}
+		if dirty {
+			msg := strings.TrimSpace(jiraImplementCommitMsg)
+			if msg == "" {
+				msg = fmt.Sprintf("%s(%s): %s", typ, is.Key, strings.TrimSpace(summary))
+			}
+			add := gitCmd(repoDir, "add", "-A")
+			add.Stdout, add.Stderr = os.Stdout, os.Stderr
+			if err := add.Run(); err != nil {
+				return fmt.Errorf("git add: %w", err)
+			}
+			commit := gitCmd(repoDir, "commit", "-m", msg)
+			commit.Stdout, commit.Stderr, commit.Stdin = os.Stdout, os.Stderr, os.Stdin
+			if err := commit.Run(); err != nil {
+				return fmt.Errorf("git commit: %w", err)
+			}
+			fmt.Println(ui.OK("✓ committed: " + msg))
+		}
+	}
+
+	if !jiraImplementNoPush {
+		push := gitCmd(repoDir, "push", "-u", jiraImplementPushRemote, branch)
+		push.Stdout, push.Stderr, push.Stdin = os.Stdout, os.Stderr, os.Stdin
+		if err := push.Run(); err != nil {
+			return fmt.Errorf("git push: %w", err)
+		}
+		fmt.Println(ui.OK("✓ pushed " + branch + " to " + jiraImplementPushRemote))
+	}
 	return nil
 }
 

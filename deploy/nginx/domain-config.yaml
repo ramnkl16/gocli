@@ -1,0 +1,29 @@
+# Brand folders under one NetStorage assets root
+#
+# Same nginx config; hostname picks the brand folder automatically.
+
+defaults:
+  netstorage:
+    hostname: example-storage.ns.edgekey.net
+    host_header: example-storage.ns.edgekey.net
+    use_ssl: true
+
+  cp_code: "822132"
+  assets_root: assets
+
+# hostname → folder name under assets/
+brands:
+  assets.cubcadet.com:
+    folder: cubcadet
+  assets.genuinefactoryparts.com:
+    folder: gfp
+
+# NetStorage layout:
+#   /822132/assets/cubcadet/na/images/hero.jpeg
+#   /822132/assets/gfp/na/images/hero.jpeg
+#
+# Public URLs (path is identical; host selects the folder):
+#   https://assets.cubcadet.com/na/images/hero.jpeg
+#   https://assets.genuinefactoryparts.com/na/images/hero.jpeg
+#
+# Local mirror: deploy/nginx/static/assets/{cubcadet|gfp}/

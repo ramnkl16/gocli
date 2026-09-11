@@ -35,7 +35,11 @@ gocli
 │   ├── list
 │   ├── run <pipeline>
 │   └── validate
-└── teams
+├── teams
+│   └── notify
+│       ├── dev-complete
+│       └── deployment
+└── email
     └── notify
         ├── dev-complete
         └── deployment
@@ -146,10 +150,12 @@ Move the issue to a workflow status (name matched case-insensitively).
 | Flag | Description |
 |------|-------------|
 | `--notify-devops` | After success, post to Teams DevOps webhook (requires config or `GOCLI_TEAMS_DEVOPS_WEBHOOK`) |
+| `--notify-email` | After success, email DevOps recipient (requires config or `GOCLI_EMAIL_DEVOPS_TO`) |
 
 ```bash
 gocli jira transition ENG-123 "In Progress"
 gocli jira transition ENG-123 Done --notify-devops
+gocli jira transition ENG-123 Done --notify-email
 ```
 
 ### `gocli jira branch <ISSUE-KEY>`
@@ -180,6 +186,49 @@ gocli jira branch ENG-123 --type bug --allow-dirty
 ```
 
 **Example branch name:** `bug-LPAD-26763-login-form-validation`
+
+### `gocli jira implement <ISSUE-KEY>`
+
+Automates the “implement ticket with Cursor Agent” loop:
+
+1. Fetches the Jira issue (title + acceptance criteria from the description).
+2. Creates a branch (`jira branch` naming) and transitions Jira to **In Progress**.
+3. Runs the **Cursor Agent CLI** (`agent -p --force --trust`) with a generated prompt.
+4. Commits any changes and pushes the branch to the remote (default: `origin`).
+
+Requires the [Cursor Agent CLI](https://cursor.com/docs/cli/overview) on `PATH` (`agent`). Override with `cursor.binary` in config or `GOCLI_CURSOR_BINARY`.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--type` | | *(required)* | Prefix: `bug`, `fea`, or `chg` |
+| `--to-status` | | `In Progress` | Jira status before implementation |
+| `--workdir` | `-C` | current dir | Git repo path |
+| `--allow-dirty` | | `false` | Allow uncommitted changes before branching |
+| `--no-transition` | | `false` | Skip Jira status transition |
+| `--dry-run` | | `false` | Preview actions; do not run agent |
+| `--print-prompt` | | `false` | Print agent prompt and exit |
+| `--no-agent` | | `false` | Create branch only; skip Cursor Agent |
+| `--no-commit` | | `false` | Do not auto-commit after agent |
+| `--no-push` | | `false` | Do not push branch after agent |
+| `--push-remote` | | `origin` | Remote to push to |
+| `--commit-message` | | *(auto)* | Commit message after agent |
+
+```bash
+gocli jira implement ENG-123 --type fea
+gocli jira implement ENG-123 --type bug --print-prompt
+gocli jira implement ENG-123 --type fea --dry-run
+gocli jira implement ENG-123 --type chg --no-push
+gocli jira implement ENG-123 --type fea -C C:\work\my-app
+```
+
+Optional config (`~/.gocli/config.yaml`):
+
+```yaml
+cursor:
+  binary: agent
+  model: composer-2.5
+  args: []
+```
 
 ---
 
@@ -454,6 +503,45 @@ gocli teams notify deployment -m "Production deploy finished."
 
 ---
 
+## Email — `gocli email`
+
+Plain-text notifications via SMTP. Configure `email.*` in config or environment (env wins for each field). SMTP password via `GOCLI_SMTP_PASSWORD` or keyring (`smtp_password`).
+
+### `gocli email notify dev-complete`
+
+Email the DevOps / handoff recipient.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--message` | `-m` | generic dev-complete text | Message body |
+| `--subject` | `-s` | `Development complete` | Email subject |
+
+```bash
+gocli email notify dev-complete
+gocli email notify dev-complete -m "ENG-123 merged; ready for release prep."
+```
+
+### `gocli email notify deployment`
+
+Email the deployment-complete recipient.
+
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--message` | `-m` | generic deployment text | Message body |
+| `--subject` | `-s` | `Deployment complete` | Email subject |
+
+```bash
+gocli email notify deployment
+gocli email notify deployment -m "Production deploy finished."
+```
+
+**Automatic email:**
+
+- `jira transition … --notify-email` → DevOps recipient
+- Successful `deploy run` (not `--dry-run`) → deploy recipient (when `email.deploy_to` / `GOCLI_EMAIL_DEPLOY_TO` is set)
+
+---
+
 ## Configuration file
 
 **Path:** `~/.gocli/config.yaml` (macOS/Linux) or `%USERPROFILE%\.gocli\config.yaml` (Windows)
@@ -479,9 +567,22 @@ ai:
   provider: github-models     # github-models | copilot
   model: openai/gpt-4o-mini
 
+cursor:
+  binary: agent               # Cursor Agent CLI (see `jira implement`)
+  model: composer-2.5         # optional; passed as --model
+  args: []                    # extra agent flags
+
 teams:
   devops_webhook: "https://…"
   deploy_webhook: "https://…"
+
+email:
+  smtp_host: smtp.company.com
+  smtp_port: 587
+  from: gocli-bot@company.com
+  smtp_user: gocli-bot@company.com
+  devops_to: devops@company.com
+  deploy_to: deploy@company.com
 ```
 
 Secrets are **not** stored in this file. Use `gocli auth login` or environment variables.
@@ -500,6 +601,15 @@ Secrets are **not** stored in this file. Use `gocli auth login` or environment v
 | `GOCLI_JIRA_SPRINT_FIELD` | Sprint custom field id, or `none` / `-` to skip |
 | `GOCLI_TEAMS_DEVOPS_WEBHOOK` | DevOps Teams webhook (overrides YAML) |
 | `GOCLI_TEAMS_DEPLOY_WEBHOOK` | Deploy Teams webhook (overrides YAML) |
+| `GOCLI_EMAIL_SMTP_HOST` | SMTP server host (overrides YAML) |
+| `GOCLI_EMAIL_SMTP_PORT` | SMTP port (default 587) |
+| `GOCLI_EMAIL_FROM` | Sender address |
+| `GOCLI_EMAIL_SMTP_USER` | SMTP auth user (defaults to `from`) |
+| `GOCLI_SMTP_PASSWORD` | SMTP password (overrides keyring) |
+| `GOCLI_EMAIL_DEVOPS_TO` | DevOps email recipient |
+| `GOCLI_EMAIL_DEPLOY_TO` | Deploy email recipient |
+| `GOCLI_CURSOR_BINARY` | Cursor Agent CLI executable (overrides `cursor.binary`) |
+| `CURSOR_API_KEY` | Cursor Agent auth for headless/CI (or run `agent login`) |
 | `GOCLI_NO_HYPERLINK` | Disable OSC 8 hyperlinks in terminal tables |
 | `GOCLI_GITHUB_REPO` | Used by install scripts only (`owner/repo`) |
 
@@ -511,7 +621,7 @@ At startup, gocli loads (if present, without overwriting existing OS env):
 2. `./.env.local`
 3. `<binary-dir>/.env`
 
-Copy from `.env.example` for local development.
+Copy from `.env.example` for local development. See `config.yaml.example` for the full YAML schema (including `cursor` for `jira implement`).
 
 ---
 

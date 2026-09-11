@@ -1,6 +1,6 @@
 # gocli
 
-> One CLI for Jira, GitHub, Copilot PR review, deployments, and Teams alerts.
+> One CLI for Jira, GitHub, Copilot PR review, deployments, Teams alerts, and email notifications.
 
 `gocli` is a single static Go binary that gives developers a unified
 "cockpit" for the work they normally do across many tabs and tools.
@@ -80,7 +80,10 @@ Use the same commands in **PowerShell** on Windows after install.
   token** from step 2 (`repo`, `read:org` for classic tokens).
 - **AI provider** — `github-models` (default; uses your GitHub token with
   [models.github.ai](https://models.github.ai)) or `copilot` (shells out to the
-  `gh copilot` extension).
+  `gh copilot` extension). Used by `pr review`, not `jira implement`.
+- **Cursor** — optional `cursor` block in config for `jira implement` (Agent CLI
+  binary, model, extra args). Auth via `agent login` or `CURSOR_API_KEY`. See
+  `config.yaml.example`.
 
 Config path: `~/.gocli/config.yaml` on macOS and Linux,
 `%USERPROFILE%\.gocli\config.yaml` on Windows (override with `GOCLI_CONFIG`).
@@ -97,6 +100,22 @@ teams:
 
 Environment overrides: `GOCLI_TEAMS_DEVOPS_WEBHOOK`, `GOCLI_TEAMS_DEPLOY_WEBHOOK`
 (each wins over the matching config field).
+
+**Email** uses SMTP for dev-complete and deployment notifications. Optional YAML:
+
+```yaml
+email:
+  smtp_host: smtp.company.com
+  smtp_port: 587
+  from: gocli-bot@company.com
+  smtp_user: gocli-bot@company.com
+  devops_to: devops@company.com
+  deploy_to: deploy@company.com
+```
+
+Set `GOCLI_SMTP_PASSWORD` (or store in keyring). Environment overrides:
+`GOCLI_EMAIL_SMTP_HOST`, `GOCLI_EMAIL_SMTP_PORT`, `GOCLI_EMAIL_FROM`,
+`GOCLI_EMAIL_SMTP_USER`, `GOCLI_EMAIL_DEVOPS_TO`, `GOCLI_EMAIL_DEPLOY_TO`.
 
 The optional `gh` CLI is used as a fallback for `gh pr-checkout` and
 `gh copilot` shell-outs.
@@ -205,9 +224,10 @@ This is the recommended workflow to move faster:
 
 1.  **Pick Work**: `gocli jira list` (Find your open tickets)
 2.  **Start Coding**: `gocli jira branch KAN-224 --type fea` (Creates git branch & moves ticket to "In Progress")
-3.  **Create PR**: `gocli pr create` (Creates GitHub PR from your commits)
-4.  **AI Review**: `gocli pr review 482` (Get instant AI feedback on your changes)
-5.  **Deploy**: `gocli deploy run staging` (Run your defined deployment pipeline)
+3.  **Or automate**: `gocli jira implement KAN-224 --type fea` (Branch + Cursor Agent + push)
+4.  **Create PR**: `gocli pr create` (Creates GitHub PR from your commits)
+5.  **AI Review**: `gocli pr review 482` (Get instant AI feedback on your changes)
+6.  **Deploy**: `gocli deploy run staging` (Run your defined deployment pipeline)
 
 ---
 
@@ -219,6 +239,8 @@ This is the recommended workflow to move faster:
 | | `jira view <KEY>` | View issue details & description |
 | | `jira open <KEY>` | Open issue in browser |
 | | `jira transition <KEY> <STATUS>` | Move ticket to Done, Review, etc. |
+| | `jira branch <KEY> --type <bug\|fea\|chg>` | Create git branch from ticket |
+| | `jira implement <KEY> --type <bug\|fea\|chg>` | Branch + Cursor Agent implement + push |
 | **GitHub** | `gh prs` | List open PRs in current repo |
 | | `gh pr-checkout <N>` | Checkout a PR locally |
 | **AI** | `pr review <N>` | Get AI feedback on a PR |
@@ -228,9 +250,20 @@ This is the recommended workflow to move faster:
 
 ## ⚙️ Configuration
 
-- **Config File**: `~/.gocli/config.yaml` (Base URL, Email, Project keys)
+- **Config File**: `~/.gocli/config.yaml` (Base URL, Email, Project keys). Copy from [`config.yaml.example`](config.yaml.example).
 - **Secrets**: Stored securely in your OS Keyring (Windows Credential Manager / Keychain).
-- **Project Overrides**: You can use a local `.env` file for project-specific `JIRA_API_TOKEN` or `GITHUB_TOKEN`.
+- **Project Overrides**: You can use a local `.env` file for project-specific `JIRA_API_TOKEN`, `GITHUB_TOKEN`, or `CURSOR_API_KEY`.
+
+**Cursor (`jira implement`)** — optional block in `config.yaml`:
+
+```yaml
+cursor:
+  binary: agent
+  model: composer-2.5
+  args: []
+```
+
+Run `agent login` once, or set `CURSOR_API_KEY`. Override the binary with `GOCLI_CURSOR_BINARY`.
 
 ---
 
@@ -276,6 +309,11 @@ gocli jira branch LPAD-26763 --type chg --dry-run   # show branch name only
 gocli jira branch LPAD-26763 --type bug --no-transition
 gocli jira branch LPAD-26763 --type fea -C C:\path\to\clone
 
+# implement ticket with Cursor Agent (branch, agent, commit, push)
+gocli jira implement LPAD-26763 --type fea
+gocli jira implement LPAD-26763 --type bug --print-prompt
+gocli jira implement LPAD-26763 --type fea --dry-run
+
 gocli gh prs                                  # PRs in current repo
 gocli gh prs --mine --state open
 gocli gh pr-view 482                          # title, checks, mergeability
@@ -294,7 +332,10 @@ gocli deploy run docker-release
 gocli teams notify dev-complete
 gocli teams notify dev-complete -m "ENG-123 merged; ready for release prep."
 gocli teams notify deployment -m "Production deploy finished."
+gocli email notify dev-complete -m "ENG-123 merged; ready for release prep."
+gocli email notify deployment -m "Production deploy finished."
 gocli jira transition ENG-123 Done --notify-devops   # transition + DevOps channel post
+gocli jira transition ENG-123 Done --notify-email    # transition + DevOps email
 ```
 
 ## Microsoft Teams
@@ -339,6 +380,35 @@ You can also put those env vars in a project **`.env`** (see above); OS env wins
 
 Messages are sent as plain text (`{"text":"…"}`) for standard Incoming Webhooks.
 
+## Email notifications
+
+Send plain-text email when development is handed off or a deploy finishes (or send manually via `gocli email notify`).
+
+### 1. Configure SMTP
+
+Add settings to `~/.gocli/config.yaml` / `%USERPROFILE%\.gocli\config.yaml`:
+
+```yaml
+email:
+  smtp_host: smtp.company.com
+  smtp_port: 587
+  from: gocli-bot@company.com
+  smtp_user: gocli-bot@company.com
+  devops_to: devops@company.com
+  deploy_to: deploy@company.com
+```
+
+Set `GOCLI_SMTP_PASSWORD` in the environment (or project `.env`). Other fields can be overridden with `GOCLI_EMAIL_*` env vars (see `docs/CLI.md`).
+
+### 2. Commands
+
+| Action | Command |
+| ------ | ------- |
+| Email DevOps on handoff | `gocli email notify dev-complete` / `-m "…"` |
+| Email deployment channel | `gocli email notify deployment` / `-m "…"` |
+| After Jira transition, also email DevOps | `gocli jira transition KEY "Status" --notify-email` |
+| After **`deploy run`** succeeds (not `--dry-run`) | Automatically emails if `deploy_to` / `GOCLI_EMAIL_DEPLOY_TO` is set |
+
 ## `deploy.yml`
 
 A pipeline is an ordered list of steps. Each step has a `type` handled
@@ -361,7 +431,7 @@ the slowest part of shipping a small change. This collapses the loop (including
 optional Teams posts when a deploy finishes or work is handed to DevOps):
 
 ```text
-pick ticket  →  branch / PR  →  AI review  →  deploy  →  Teams notify  →  transition ticket
+pick ticket  →  branch / PR  →  AI review  →  deploy  →  Teams / email notify  →  transition ticket
 ```
 
 …all without leaving your terminal.

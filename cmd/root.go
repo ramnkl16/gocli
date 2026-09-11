@@ -22,13 +22,13 @@ func SetBuildInfo(version, commit, date string) {
 
 var rootCmd = &cobra.Command{
 	Use:   "gocli",
-	Short: "One CLI for Jira, GitHub, Copilot PR review, deployments, and Teams.",
+	Short: "One CLI for Jira, GitHub, Copilot PR review, deployments, Teams, and email.",
 	Long: `gocli is a unified developer cockpit.
 
 It bundles Jira issue tracking, GitHub PR / issue work, AI-assisted PR
 reviews via GitHub Copilot / GitHub Models, pluggable deployment
 pipelines (scripts, Docker, Kubernetes), and optional Microsoft Teams
-webhook notifications into one fast static binary so you stop context-switching between tools.
+webhook and SMTP email notifications into one fast static binary so you stop context-switching between tools.
 
 Run ` + "`gocli auth login`" + ` to get started.`,
 	SilenceUsage:  true,
@@ -50,6 +50,7 @@ func init() {
 	rootCmd.AddCommand(prCmd)
 	rootCmd.AddCommand(deployCmd)
 	rootCmd.AddCommand(teamsCmd)
+	rootCmd.AddCommand(emailCmd)
 }
 
 var versionCmd = &cobra.Command{

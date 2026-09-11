@@ -10,6 +10,7 @@ import (
 
 	"github.com/yourorg/gocli/internal/config"
 	"github.com/yourorg/gocli/internal/deploy"
+	"github.com/yourorg/gocli/internal/email"
 	"github.com/yourorg/gocli/internal/teams"
 	"github.com/yourorg/gocli/internal/ui"
 )
@@ -88,15 +89,24 @@ func runDeployRun(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	url := teams.DeployWebhookURL(cfg)
-	if url == "" {
-		return nil
-	}
 	msg := fmt.Sprintf("Deployment completed: pipeline %q (%s)", args[0], deployFile)
-	if err := teams.PostMessage(context.Background(), url, msg); err != nil {
-		return fmt.Errorf("teams: %w", err)
+	if url := teams.DeployWebhookURL(cfg); url != "" {
+		if err := teams.PostMessage(context.Background(), url, msg); err != nil {
+			return fmt.Errorf("teams: %w", err)
+		}
+		fmt.Fprintln(os.Stdout, ui.OK("✓ Sent Teams message (deployment)"))
 	}
-	fmt.Fprintln(os.Stdout, ui.OK("✓ Sent Teams message (deployment)"))
+	if to := email.DeployTo(cfg); to != "" {
+		smtp, err := email.ResolveSMTPSettings(cfg)
+		if err != nil {
+			return fmt.Errorf("email: %w", err)
+		}
+		subject := fmt.Sprintf("Deployment complete: %s", args[0])
+		if err := email.SendPlainText(context.Background(), smtp, to, subject, msg); err != nil {
+			return fmt.Errorf("email: %w", err)
+		}
+		fmt.Fprintln(os.Stdout, ui.OK("✓ Sent email (deployment)"))
+	}
 	return nil
 }
 

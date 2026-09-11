@@ -18,7 +18,9 @@ type Config struct {
 	Jira   JiraConfig   `mapstructure:"jira"   yaml:"jira"`
 	GitHub GitHubConfig `mapstructure:"github" yaml:"github"`
 	AI     AIConfig     `mapstructure:"ai"     yaml:"ai"`
+	Cursor CursorConfig `mapstructure:"cursor" yaml:"cursor"`
 	Teams  TeamsConfig  `mapstructure:"teams"  yaml:"teams"`
+	Email  EmailConfig  `mapstructure:"email"  yaml:"email"`
 }
 
 type JiraConfig struct {
@@ -44,6 +46,28 @@ type AIConfig struct {
 	// (calls https://models.github.ai with the GitHub token).
 	Provider string `mapstructure:"provider" yaml:"provider"`
 	Model    string `mapstructure:"model"    yaml:"model"`
+}
+
+// CursorConfig controls the Cursor Agent CLI used by `jira implement`.
+type CursorConfig struct {
+	// Binary is the Cursor Agent CLI executable (default: agent).
+	Binary string `mapstructure:"binary" yaml:"binary"`
+	// Model is passed to agent --model when set.
+	Model string `mapstructure:"model" yaml:"model"`
+	// Args are extra flags appended before the prompt (e.g. --sandbox disabled).
+	Args []string `mapstructure:"args" yaml:"args"`
+}
+
+// EmailConfig holds SMTP notification settings (password via keyring or GOCLI_SMTP_PASSWORD).
+type EmailConfig struct {
+	SMTPHost string `mapstructure:"smtp_host" yaml:"smtp_host"`
+	SMTPPort int    `mapstructure:"smtp_port" yaml:"smtp_port"`
+	From     string `mapstructure:"from"     yaml:"from"`
+	SMTPUser string `mapstructure:"smtp_user" yaml:"smtp_user"`
+	// DevOpsTo receives dev-complete / handoff notifications.
+	DevOpsTo string `mapstructure:"devops_to" yaml:"devops_to"`
+	// DeployTo receives deployment-complete notifications.
+	DeployTo string `mapstructure:"deploy_to" yaml:"deploy_to"`
 }
 
 // TeamsConfig holds Microsoft Teams Incoming Webhook URLs (not secrets in repo:
@@ -126,6 +150,8 @@ func Save(c *Config) error {
 	v.Set("jira", c.Jira)
 	v.Set("github", c.GitHub)
 	v.Set("ai", c.AI)
+	v.Set("cursor", c.Cursor)
 	v.Set("teams", c.Teams)
+	v.Set("email", c.Email)
 	return v.WriteConfigAs(p)
 }

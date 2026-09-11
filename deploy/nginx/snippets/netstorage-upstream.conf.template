@@ -1,0 +1,5 @@
+upstream netstorage {
+    zone netstorage 64k;
+    server ${NETSTORAGE_HOSTNAME} resolve;
+    keepalive 32;
+}

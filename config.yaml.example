@@ -1,0 +1,49 @@
+# gocli — example user config
+#
+# Copy to your gocli config directory (secrets are NOT stored here):
+#
+#     mkdir -p ~/.gocli && cp config.yaml.example ~/.gocli/config.yaml
+#     # Windows PowerShell:
+#     # New-Item -ItemType Directory -Force $env:USERPROFILE\.gocli
+#     # Copy-Item config.yaml.example $env:USERPROFILE\.gocli\config.yaml
+#
+# Override path with GOCLI_CONFIG or directory with GOCLI_HOME.
+# Most values are also set interactively by `gocli auth login`.
+
+jira:
+  base_url: https://yourcompany.atlassian.net
+  email: you@company.com
+  project: ENG
+  sprint_field: auto          # auto | customfield_XXXXX | none
+  assignee_aliases:
+    bob: bob@company.com
+
+github:
+  user: your-github-login
+  default_repo: yourorg/yourrepo
+
+ai:
+  provider: github-models     # github-models | copilot (used by `pr review`)
+  model: openai/gpt-4o-mini
+
+# Cursor Agent CLI — used by `gocli jira implement`
+# Install: irm 'https://cursor.com/install?win32=true' | iex  (Windows)
+#          curl https://cursor.com/install -fsS | bash         (macOS/Linux)
+# Auth: run `agent login` once, or set CURSOR_API_KEY in the environment.
+cursor:
+  binary: agent               # override with GOCLI_CURSOR_BINARY
+  model: composer-2.5         # optional; passed as --model to agent
+  args: []                    # extra flags, e.g. ["--sandbox", "disabled"]
+
+teams:
+  devops_webhook: "https://…"
+  deploy_webhook: "https://…"
+
+# SMTP email notifications — password via GOCLI_SMTP_PASSWORD or keyring (not in this file)
+email:
+  smtp_host: smtp.company.com
+  smtp_port: 587
+  from: gocli-bot@company.com
+  smtp_user: gocli-bot@company.com
+  devops_to: devops@company.com
+  deploy_to: deploy@company.com

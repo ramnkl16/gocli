@@ -17,8 +17,9 @@ const service = "gocli"
 
 // Known keys.
 const (
-	KeyJiraToken   = "jira_api_token"
-	KeyGitHubToken = "github_token"
+	KeyJiraToken    = "jira_api_token"
+	KeyGitHubToken  = "github_token"
+	KeySMTPPassword = "smtp_password"
 )
 
 // envFor returns the environment variable name a given key should fall back to.
@@ -28,6 +29,8 @@ func envFor(key string) string {
 		return "JIRA_API_TOKEN"
 	case KeyGitHubToken:
 		return "GITHUB_TOKEN"
+	case KeySMTPPassword:
+		return "GOCLI_SMTP_PASSWORD"
 	default:
 		return ""
 	}
