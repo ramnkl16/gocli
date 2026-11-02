@@ -7,22 +7,29 @@ import (
 	"os"
 	"strings"
 
+	gojira "github.com/andygrunwald/go-jira/v2/cloud"
 	gh "github.com/google/go-github/v66/github"
 	"github.com/spf13/cobra"
 
 	ghint "github.com/yourorg/gocli/internal/github"
+	jiraint "github.com/yourorg/gocli/internal/jira"
 	"github.com/yourorg/gocli/internal/ui"
 )
 
 var (
-	prCreateRepo     string
-	prCreateTitle    string
-	prCreateBody     string
-	prCreateBodyFile string
-	prCreateBase     string
-	prCreateHead     string
-	prCreateDraft    bool
-	prCreateWorkdir  string
+	prCreateRepo           string
+	prCreateTitle          string
+	prCreateBody           string
+	prCreateBodyFile       string
+	prCreateBase           string
+	prCreateHead           string
+	prCreateDraft          bool
+	prCreateWorkdir        string
+	prCreateJiraKey        string
+	prCreateNoJira         bool
+	prCreateTransition     string
+	prCreateNoComment      bool
+	prCreateCommentMessage string
 )
 
 var prCreateCmd = &cobra.Command{
@@ -35,7 +42,13 @@ else default_repo from config.
 
 --head defaults to the current git branch; --base defaults to the repo's
 default branch on GitHub (usually main). The head branch must already be
-pushed. For a PR from a fork, use --head forkowner:branch.`,
+pushed. For a PR from a fork, use --head forkowner:branch.
+
+If your branch name contains a Jira issue key (e.g. fea-KAN-224-auth) or you
+pass --jira <KEY>, gocli automatically links the PR to Jira:
+  - References the Jira ticket in the PR description
+  - Posts an automated comment back to the Jira ticket with the PR link
+  - Optionally transitions the ticket to a new status via --transition`,
 	Args: cobra.NoArgs,
 	RunE: runPRCreate,
 }
@@ -49,6 +62,11 @@ func init() {
 	prCreateCmd.Flags().StringVar(&prCreateHead, "head", "", "branch with your changes (default: current git branch)")
 	prCreateCmd.Flags().BoolVar(&prCreateDraft, "draft", false, "open as draft pull request")
 	prCreateCmd.Flags().StringVarP(&prCreateWorkdir, "workdir", "C", "", "local git clone for remote/branch resolution (use with --head default)")
+	prCreateCmd.Flags().StringVar(&prCreateJiraKey, "jira", "", "Jira issue key to link (default: auto-detected from branch)")
+	prCreateCmd.Flags().BoolVar(&prCreateNoJira, "no-jira", false, "disable Jira linking, comment, and transitions")
+	prCreateCmd.Flags().StringVar(&prCreateTransition, "transition", "", "transition Jira issue to this status (e.g. 'In Review')")
+	prCreateCmd.Flags().BoolVar(&prCreateNoComment, "no-comment", false, "do not post a comment to Jira with the PR link")
+	prCreateCmd.Flags().StringVar(&prCreateCommentMessage, "comment-message", "", "custom comment for Jira (default: 'Opened PR #<N>: <URL>')")
 
 	prCmd.AddCommand(prCreateCmd)
 }
@@ -64,21 +82,85 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 
+	head := strings.TrimSpace(prCreateHead)
+	if head == "" {
+		hb, err := ghint.CurrentBranch(prCreateWorkdir)
+		if err != nil {
+			return fmt.Errorf("set --head or run inside a git repo: %w", err)
+		}
+		head = hb
+	}
+
+	// Detect and resolve Jira issue if enabled
+	var jiraKey string
+	if !prCreateNoJira {
+		if trimmed := strings.TrimSpace(prCreateJiraKey); trimmed != "" {
+			jiraKey = strings.ToUpper(trimmed)
+		} else {
+			jiraKey = jiraint.ExtractIssueKey(head)
+		}
+	}
+
+	var jiraClient *jiraint.Client
+	var jiraIssue *gojira.Issue
+	var jiraIssueURL string
+	if jiraKey != "" {
+		jc, err := jiraint.New(ctx)
+		if err != nil {
+			if prCreateJiraKey != "" {
+				return fmt.Errorf("jira client: %w", err)
+			}
+		} else {
+			jiraClient = jc
+			jiraIssueURL = fmt.Sprintf("%s/browse/%s", strings.TrimRight(jc.BaseURL, "/"), jiraKey)
+			is, _, err := jc.Issue.Get(ctx, jiraKey, nil)
+			if err != nil {
+				if prCreateJiraKey != "" {
+					return fmt.Errorf("get jira issue %s: %w", jiraKey, err)
+				}
+			} else {
+				jiraIssue = is
+			}
+		}
+	}
+
 	title := strings.TrimSpace(prCreateTitle)
 	if title == "" {
 		subj, err := ghint.LastCommitSubject(prCreateWorkdir)
-		if err != nil {
-			return fmt.Errorf("set --title or run inside a git repo: %w", err)
+		if err == nil && strings.TrimSpace(subj) != "" {
+			title = strings.TrimSpace(subj)
+		} else if jiraIssue != nil && jiraIssue.Fields != nil && jiraIssue.Fields.Summary != "" {
+			title = fmt.Sprintf("%s: %s", jiraKey, strings.TrimSpace(jiraIssue.Fields.Summary))
 		}
-		title = subj
 		if title == "" {
-			return fmt.Errorf("empty --title and could not read last commit")
+			if err != nil {
+				return fmt.Errorf("set --title or run inside a git repo: %w", err)
+			}
+			return fmt.Errorf("empty --title and could not read last commit or Jira issue")
 		}
 	}
 
 	body, err := prCreateReadBody()
 	if err != nil {
 		return err
+	}
+
+	if jiraKey != "" && jiraIssueURL != "" {
+		if strings.TrimSpace(body) == "" {
+			var b strings.Builder
+			fmt.Fprintf(&b, "## Jira Ticket\n- [%s](%s)", jiraKey, jiraIssueURL)
+			if jiraIssue != nil && jiraIssue.Fields != nil && jiraIssue.Fields.Summary != "" {
+				fmt.Fprintf(&b, ": %s\n", strings.TrimSpace(jiraIssue.Fields.Summary))
+			} else {
+				b.WriteString("\n")
+			}
+			if jiraIssue != nil && jiraIssue.Fields != nil && jiraIssue.Fields.Description != "" {
+				fmt.Fprintf(&b, "\n## Jira Description\n%s\n", strings.TrimSpace(jiraIssue.Fields.Description))
+			}
+			body = b.String()
+		} else if !strings.Contains(body, jiraIssueURL) && !strings.Contains(body, jiraKey) {
+			body = fmt.Sprintf("**Jira:** [%s](%s)\n\n%s", jiraKey, jiraIssueURL, body)
+		}
 	}
 
 	base := strings.TrimSpace(prCreateBase)
@@ -91,15 +173,6 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		if base == "" {
 			return fmt.Errorf("repo has no default branch; pass --base explicitly")
 		}
-	}
-
-	head := strings.TrimSpace(prCreateHead)
-	if head == "" {
-		hb, err := ghint.CurrentBranch(prCreateWorkdir)
-		if err != nil {
-			return fmt.Errorf("set --head or run inside a git repo: %w", err)
-		}
-		head = hb
 	}
 
 	newPR := &gh.NewPullRequest{
@@ -121,21 +194,54 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 
 	fmt.Println(ui.OK(fmt.Sprintf("✓ Opened pull request #%d", p.GetNumber())))
 	fmt.Println(p.GetHTMLURL())
+
+	if jiraClient != nil && jiraKey != "" {
+		if !prCreateNoComment {
+			commentMsg := strings.TrimSpace(prCreateCommentMessage)
+			if commentMsg == "" {
+				commentMsg = fmt.Sprintf("Opened GitHub pull request #%d:\n%s", p.GetNumber(), p.GetHTMLURL())
+			}
+			if _, err := jiraClient.AddComment(ctx, jiraKey, commentMsg); err != nil {
+				fmt.Printf("%s Could not post comment to Jira %s: %v\n", ui.Warn("!"), jiraKey, err)
+			} else {
+				fmt.Println(ui.OK(fmt.Sprintf("✓ Added comment to Jira %s", jiraKey)))
+			}
+		}
+
+		if prCreateTransition != "" {
+			to, err := jiraClient.TransitionTo(ctx, jiraKey, prCreateTransition)
+			if err != nil {
+				fmt.Printf("%s Could not transition Jira %s to %q: %v\n", ui.Warn("!"), jiraKey, prCreateTransition, err)
+			} else {
+				fmt.Println(ui.OK(fmt.Sprintf("✓ Jira %s → %s", jiraKey, to)))
+			}
+		}
+	}
+
 	return nil
 }
 
 func enhancePRCreateError(err error) error {
 	var er *gh.ErrorResponse
-	if errors.As(err, &er) && er.Response != nil && er.Response.StatusCode == 403 {
-		repo := "this repository"
-		if er.Response.Request != nil && er.Response.Request.URL != nil {
-			repo = repoFromGitHubAPIPath(er.Response.Request.URL.Path)
+	if errors.As(err, &er) {
+		if er.Response != nil && er.Response.StatusCode == 403 {
+			repo := "this repository"
+			if er.Response.Request != nil && er.Response.Request.URL != nil {
+				repo = repoFromGitHubAPIPath(er.Response.Request.URL.Path)
+			}
+			return fmt.Errorf("%w\n\nGitHub returned 403: your token cannot open a pull request on %s. Fix:\n"+
+				"  • Classic PAT: enable scope 'repo' (full), or for public-only repos you can try 'public_repo' (narrower).\n"+
+				"  • Fine-grained PAT: add repository access for this repo, then set Pull requests: Read and write, Contents: Read or Read and write.\n"+
+				"  • If the repo is under an org with SSO: fine-grained token row → Configure SSO and authorize the org.\n"+
+				"  • The branch in --head must already exist on GitHub (run git push first).\n", err, repo)
 		}
-		return fmt.Errorf("%w\n\nGitHub returned 403: your token cannot open a pull request on %s. Fix:\n"+
-			"  • Classic PAT: enable scope 'repo' (full), or for public-only repos you can try 'public_repo' (narrower).\n"+
-			"  • Fine-grained PAT: add repository access for this repo, then set Pull requests: Read and write, Contents: Read or Read and write.\n"+
-			"  • If the repo is under an org with SSO: fine-grained token row → Configure SSO and authorize the org.\n"+
-			"  • The branch in --head must already exist on GitHub (run git push first).\n", err, repo)
+		if er.Response != nil && er.Response.StatusCode == 422 {
+			for _, e := range er.Errors {
+				if e.Field == "head" {
+					return fmt.Errorf("%w\n\nGitHub cannot find the head branch on remote repository.\nFix: push your branch to GitHub before creating a pull request:\n  git push -u origin <branch-name>\n", err)
+				}
+			}
+		}
 	}
 	if err != nil && strings.Contains(err.Error(), "not accessible by personal access token") {
 		return fmt.Errorf("%w\n\n(see: classic PAT with 'repo' scope, or fine-grained: Pull requests + Contents on this repository; push your branch first)", err)
