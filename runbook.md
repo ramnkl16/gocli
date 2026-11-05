@@ -51,11 +51,14 @@ gocli gh prs --mine --state open
 gocli gh pr-view 482                          # title, checks, mergeability
 gocli gh pr-checkout 482
 
+gocli pr create --ai                          # AI generates conventional title & description from diff
 gocli pr create --title "Fix login"           # or omit --title to use last commit subject / Jira summary
 gocli pr create --transition "In Review"      # auto-links Jira from branch, adds comment, moves to In Review
 gocli pr create --base main --head my-feature
 gocli pr create -R myorg/therepo --workdir C:\other\clone --draft
 gocli pr review 482                           # AI review, prints markdown
+gocli pr review 482 --comment --inline        # post review with inline comments to GitHub
+gocli pr review 482 --apply                   # automatically fix review suggestions on local branch
 
 gocli deploy list -f examples/deploy.yml
 gocli deploy run staging --dry-run

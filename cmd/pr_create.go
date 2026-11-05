@@ -11,6 +11,7 @@ import (
 	gh "github.com/google/go-github/v66/github"
 	"github.com/spf13/cobra"
 
+	"github.com/yourorg/gocli/internal/copilot"
 	ghint "github.com/yourorg/gocli/internal/github"
 	jiraint "github.com/yourorg/gocli/internal/jira"
 	"github.com/yourorg/gocli/internal/ui"
@@ -30,6 +31,7 @@ var (
 	prCreateTransition     string
 	prCreateNoComment      bool
 	prCreateCommentMessage string
+	prCreateAI             bool
 )
 
 var prCreateCmd = &cobra.Command{
@@ -43,6 +45,9 @@ else default_repo from config.
 --head defaults to the current git branch; --base defaults to the repo's
 default branch on GitHub (usually main). The head branch must already be
 pushed. For a PR from a fork, use --head forkowner:branch.
+
+Use --ai to automatically analyze git diff, commit history, and Jira issue
+details to generate a concise conventional-commit PR title and structured description.
 
 If your branch name contains a Jira issue key (e.g. fea-KAN-224-auth) or you
 pass --jira <KEY>, gocli automatically links the PR to Jira:
@@ -67,6 +72,7 @@ func init() {
 	prCreateCmd.Flags().StringVar(&prCreateTransition, "transition", "", "transition Jira issue to this status (e.g. 'In Review')")
 	prCreateCmd.Flags().BoolVar(&prCreateNoComment, "no-comment", false, "do not post a comment to Jira with the PR link")
 	prCreateCmd.Flags().StringVar(&prCreateCommentMessage, "comment-message", "", "custom comment for Jira (default: 'Opened PR #<N>: <URL>')")
+	prCreateCmd.Flags().BoolVar(&prCreateAI, "ai", false, "generate PR title and description using AI from diff and Jira issue")
 
 	prCmd.AddCommand(prCreateCmd)
 }
@@ -89,6 +95,18 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 			return fmt.Errorf("set --head or run inside a git repo: %w", err)
 		}
 		head = hb
+	}
+
+	base := strings.TrimSpace(prCreateBase)
+	if base == "" {
+		rep, _, err := c.Repositories.Get(ctx, owner, name)
+		if err != nil {
+			return fmt.Errorf("get repo: %w", err)
+		}
+		base = rep.GetDefaultBranch()
+		if base == "" {
+			return fmt.Errorf("repo has no default branch; pass --base explicitly")
+		}
 	}
 
 	// Detect and resolve Jira issue if enabled
@@ -125,6 +143,76 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 	}
 
 	title := strings.TrimSpace(prCreateTitle)
+	body, err := prCreateReadBody()
+	if err != nil {
+		return err
+	}
+
+	if prCreateAI && (title == "" || strings.TrimSpace(body) == "") {
+		ui.Section("Generating PR with AI")
+		fmt.Println(ui.Dim("Analyzing branch diff and commits…"))
+
+		diff, _ := ghint.BranchDiff(prCreateWorkdir, base, head)
+		commits, _ := ghint.CommitLog(prCreateWorkdir, base, head)
+
+		// Fallback to GitHub Compare API if local diff is empty
+		if strings.TrimSpace(diff) == "" {
+			comp, _, compErr := c.Repositories.CompareCommits(ctx, owner, name, base, head, nil)
+			if compErr == nil && comp != nil {
+				var diffBuf strings.Builder
+				for _, f := range comp.Files {
+					if f != nil && f.GetPatch() != "" {
+						fmt.Fprintf(&diffBuf, "diff --git a/%s b/%s\n%s\n", f.GetFilename(), f.GetFilename(), f.GetPatch())
+					}
+				}
+				diff = diffBuf.String()
+
+				if commits == "" {
+					var commitBuf strings.Builder
+					for _, cm := range comp.Commits {
+						if cm != nil && cm.GetCommit() != nil {
+							msg := strings.Split(cm.GetCommit().GetMessage(), "\n")[0]
+							sha := cm.GetSHA()
+							if len(sha) > 7 {
+								sha = sha[:7]
+							}
+							fmt.Fprintf(&commitBuf, "%s %s\n", sha, msg)
+						}
+					}
+					commits = commitBuf.String()
+				}
+			}
+		}
+
+		var jiraSummary, jiraDesc string
+		if jiraIssue != nil && jiraIssue.Fields != nil {
+			jiraSummary = strings.TrimSpace(jiraIssue.Fields.Summary)
+			jiraDesc = strings.TrimSpace(jiraIssue.Fields.Description)
+		}
+
+		gen, err := copilot.GeneratePR(ctx, copilot.GeneratePRInput{
+			Repo:        owner + "/" + name,
+			Base:        base,
+			Head:        head,
+			Diff:        diff,
+			Commits:     commits,
+			JiraKey:     jiraKey,
+			JiraSummary: jiraSummary,
+			JiraDesc:    jiraDesc,
+		}, jiraIssueURL)
+		if err != nil {
+			return fmt.Errorf("ai generate pr: %w", err)
+		}
+
+		if title == "" && gen.Title != "" {
+			title = gen.Title
+		}
+		if strings.TrimSpace(body) == "" && gen.Body != "" {
+			body = gen.Body
+		}
+		fmt.Println(ui.OK("✓ AI generated PR title & description"))
+	}
+
 	if title == "" {
 		subj, err := ghint.LastCommitSubject(prCreateWorkdir)
 		if err == nil && strings.TrimSpace(subj) != "" {
@@ -138,11 +226,6 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 			}
 			return fmt.Errorf("empty --title and could not read last commit or Jira issue")
 		}
-	}
-
-	body, err := prCreateReadBody()
-	if err != nil {
-		return err
 	}
 
 	if jiraKey != "" && jiraIssueURL != "" {
@@ -163,18 +246,6 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		}
 	}
 
-	base := strings.TrimSpace(prCreateBase)
-	if base == "" {
-		rep, _, err := c.Repositories.Get(ctx, owner, name)
-		if err != nil {
-			return fmt.Errorf("get repo: %w", err)
-		}
-		base = rep.GetDefaultBranch()
-		if base == "" {
-			return fmt.Errorf("repo has no default branch; pass --base explicitly")
-		}
-	}
-
 	newPR := &gh.NewPullRequest{
 		Title: gh.String(title),
 		Head:  gh.String(head),
@@ -192,7 +263,7 @@ func runPRCreate(cmd *cobra.Command, _ []string) error {
 		return enhancePRCreateError(err)
 	}
 
-	fmt.Println(ui.OK(fmt.Sprintf("✓ Opened pull request #%d", p.GetNumber())))
+	fmt.Println(ui.OK(fmt.Sprintf("✓ Opened pull request #%d: %s", p.GetNumber(), title)))
 	fmt.Println(p.GetHTMLURL())
 
 	if jiraClient != nil && jiraKey != "" {
