@@ -21,6 +21,7 @@ gocli
 │   ├── view <ISSUE-KEY>
 │   ├── open <ISSUE-KEY>
 │   ├── transition <ISSUE-KEY> <STATUS>
+│   ├── comment <ISSUE-KEY> [MESSAGE]
 │   └── branch <ISSUE-KEY>
 ├── gh
 │   ├── prs
@@ -156,6 +157,20 @@ Move the issue to a workflow status (name matched case-insensitively).
 gocli jira transition ENG-123 "In Progress"
 gocli jira transition ENG-123 Done --notify-devops
 gocli jira transition ENG-123 Done --notify-email
+```
+
+### `gocli jira comment <ISSUE-KEY> [MESSAGE]`
+
+Posts a comment to the specified Jira issue. The message can be passed as an argument, via `--message` / `-m`, or piped through standard input.
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--message` | `-m` | Comment body |
+
+```bash
+gocli jira comment KAN-224 "Pull request is open and ready for review"
+gocli jira comment KAN-224 -m "Deployed to staging environment"
+cat build-notes.txt | gocli jira comment KAN-224
 ```
 
 ### `gocli jira branch <ISSUE-KEY>`
@@ -316,20 +331,38 @@ Preferred commands for opening PRs and AI review. Overlaps partially with `gocli
 
 Create a PR via GitHub API. Head branch must exist on GitHub (push first). For fork PRs use `--head forkowner:branch`.
 
+When your head branch name contains a Jira ticket key (e.g. `fea-KAN-224-auth`) or when passing `--jira <KEY>`, `gocli` automatically integrates with Jira:
+- Pre-fills the PR title (if omitted) with the Jira issue summary
+- Pre-fills or enriches the PR body with the Jira ticket link and description
+- Automatically posts a comment back to the Jira issue with the PR link
+- Optionally transitions the Jira issue to a new status (e.g. `--transition "In Review"`)
+
 | Flag | Short | Default | Description |
 |------|-------|---------|-------------|
 | `--repo` | `-R` | | `owner/name` |
-| `--title` | | last commit subject | PR title |
+| `--title` | | last commit / Jira summary | PR title |
 | `--body` | | | PR description (markdown) |
 | `--body-file` | | | Read body from file (overrides `--body`) |
 | `--base` | | repo default branch | Merge target |
 | `--head` | | current branch | Source branch |
 | `--draft` | | `false` | Open as draft |
 | `--workdir` | `-C` | | Git clone for remote/branch resolution |
+| `--jira` | | auto-detected from branch | Explicit Jira ticket key to link |
+| `--no-jira` | | `false` | Disable Jira linking, comments, and status transitions |
+| `--transition` | | | Transition Jira issue to this status (e.g. `In Review`) |
+| `--no-comment` | | `false` | Do not post comment to Jira with the PR link |
+| `--comment-message` | | `Opened PR #<N>: <URL>` | Custom comment text for Jira |
+| `--ai` | | `false` | Generate PR title and structured description using AI from diff and Jira issue |
 
 **Repo resolution order:** `--repo`, else `origin` in workdir (or cwd), else `github.default_repo`.
 
 ```bash
+gocli pr create --ai                                 # AI generates conventional title & description from diff
+gocli pr create --ai --transition "In Review"        # AI generation + Jira transition & linking
+gocli pr create                                      # auto-detects Jira ticket from branch and links it
+gocli pr create --transition "In Review"             # opens PR, comments on Jira, moves ticket to In Review
+gocli pr create --jira KAN-224                       # explicitly link a specific Jira ticket
+gocli pr create --no-jira                            # open standard PR without touching Jira
 gocli pr create --title "Fix login"
 gocli pr create --base main --head my-feature
 gocli pr create -R myorg/therepo --workdir C:\other\clone --draft
@@ -338,15 +371,40 @@ gocli pr create --body-file pr-body.md
 
 ### `gocli pr review <number>`
 
-AI code review using configured provider (`github-models` or `copilot`). Fetches PR diff from GitHub API.
+AI code review using configured provider (`github-models` or `copilot`). Fetches PR diff from GitHub API and outputs structured markdown (Summary, Risk, Suggestions, Tests, Verdict).
 
-| Flag | Short | Description |
-|------|-------|-------------|
-| `--repo` | `-R` | `owner/name` |
+| Flag | Short | Default | Description |
+|------|-------|---------|-------------|
+| `--repo` | `-R` | | `owner/name` |
+| `--comment` | | `false` | Post review to GitHub PR as an official review comment |
+| `--inline` | | `false` | Attach line-level comments and suggestion blocks to the PR diff |
+| `--draft` | | `false` | Create review as pending/draft on GitHub instead of publishing |
+| `--verdict` | | `COMMENT` | Review verdict (`COMMENT`, `APPROVE`, `REQUEST_CHANGES`) |
+| `--apply` | | `false` | Automatically apply review suggestions to local working tree |
+| `--workdir` | `-C` | | Local git clone directory (for `--apply`) |
+| `--allow-dirty` | | `false` | Allow dirty working tree when running `--apply` |
+| `--no-agent` | | `false` | Disable Cursor Agent when running `--apply` (apply direct suggestion blocks only) |
+| `--dry-run` | | `false` | Preview review submission or local modifications without applying |
 
 ```bash
+# Print review to terminal
 gocli pr review 482
-gocli pr review 482 -R myorg/myrepo
+
+# Post review as an official comment on GitHub
+gocli pr review 482 --comment
+
+# Post review with inline diff comments & one-click GitHub suggestion blocks
+gocli pr review 482 --comment --inline
+
+# Post as pending draft on GitHub for human review before publishing
+gocli pr review 482 --comment --draft
+
+# Automatically fix review suggestions on your local working branch
+gocli pr review 482 --apply
+
+# Dry run
+gocli pr review 482 --comment --inline --dry-run
+gocli pr review 482 --apply --dry-run
 ```
 
 ### `pr create` vs `gh pr-create`

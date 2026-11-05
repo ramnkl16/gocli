@@ -64,6 +64,24 @@ var jiraTransitionCmd = &cobra.Command{
 	RunE:  runJiraTransition,
 }
 
+var jiraCommentMessage string
+
+var jiraCommentCmd = &cobra.Command{
+	Use:   "comment <ISSUE-KEY> [MESSAGE]",
+	Short: "Add a comment to a Jira issue",
+	Long: `Add a comment to a Jira issue.
+
+The comment message can be passed as an argument, via the --message / -m flag,
+or piped from stdin.
+
+Examples:
+  gocli jira comment KAN-224 "PR #12 is ready for review"
+  gocli jira comment KAN-224 -m "Deployment to staging complete"
+  cat notes.txt | gocli jira comment KAN-224`,
+	Args: cobra.RangeArgs(1, 2),
+	RunE: runJiraComment,
+}
+
 var (
 	jiraBranchType         string
 	jiraBranchToStatus     string
@@ -151,7 +169,9 @@ func init() {
 	jiraTransitionCmd.Flags().BoolVar(&jiraTransitionNotifyDevOps, "notify-devops", false, "after transition, post to Teams devops webhook (if configured)")
 	jiraTransitionCmd.Flags().BoolVar(&jiraTransitionNotifyEmail, "notify-email", false, "after transition, email DevOps recipient (if configured)")
 
-	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraBranchCmd, jiraImplementCmd)
+	jiraCommentCmd.Flags().StringVarP(&jiraCommentMessage, "message", "m", "", "comment body (can also be passed as argument or via stdin)")
+
+	jiraCmd.AddCommand(jiraListCmd, jiraViewCmd, jiraOpenCmd, jiraTransitionCmd, jiraCommentCmd, jiraBranchCmd, jiraImplementCmd)
 }
 
 func runJiraList(cmd *cobra.Command, _ []string) error {
@@ -326,6 +346,37 @@ func runJiraTransition(cmd *cobra.Command, args []string) error {
 		}
 		fmt.Println(ui.OK("✓ Sent email (DevOps)"))
 	}
+	return nil
+}
+
+func runJiraComment(cmd *cobra.Command, args []string) error {
+	ctx := context.Background()
+	c, err := jiraint.New(ctx)
+	if err != nil {
+		return err
+	}
+	key := strings.TrimSpace(args[0])
+	body := strings.TrimSpace(jiraCommentMessage)
+	if len(args) > 1 && strings.TrimSpace(args[1]) != "" {
+		body = strings.TrimSpace(args[1])
+	}
+	if body == "" {
+		stat, err := os.Stdin.Stat()
+		if err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
+			b, readErr := io.ReadAll(os.Stdin)
+			if readErr == nil {
+				body = strings.TrimSpace(string(b))
+			}
+		}
+	}
+	if body == "" {
+		return fmt.Errorf("comment message is required (pass as argument, -m flag, or stdin)")
+	}
+
+	if _, err := c.AddComment(ctx, key, body); err != nil {
+		return err
+	}
+	fmt.Println(ui.OK("✓ Added comment to " + key))
 	return nil
 }
 

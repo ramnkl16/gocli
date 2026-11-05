@@ -18,6 +18,7 @@ This is the recommended workflow to move faster:
 | | `jira view <KEY>` | View issue details & description |
 | | `jira open <KEY>` | Open issue in browser |
 | | `jira transition <KEY> <STATUS>` | Move ticket to Done, Review, etc. |
+| | `jira comment <KEY> [MSG]` | Post a comment to Jira issue |
 | **GitHub** | `gh prs` | List open PRs in current repo |
 | | `gh pr-checkout <N>` | Checkout a PR locally |
 | **AI** | `pr review <N>` | Get AI feedback on a PR |
@@ -36,6 +37,7 @@ gocli jira list --status "In Review"
 gocli jira view LPAD-26763
 gocli jira view LPAD-26763 --markdown         # or -m; copy output into Cursor Agent
 gocli jira transition LPAD-26763 "In Progress"
+gocli jira comment LPAD-26763 "Starting implementation"
 
 # create branch bug-LPAD-26763-..., move ticket to "In Progress", git checkout -b
 gocli jira branch LPAD-26763 --type bug
@@ -49,10 +51,14 @@ gocli gh prs --mine --state open
 gocli gh pr-view 482                          # title, checks, mergeability
 gocli gh pr-checkout 482
 
-gocli pr create --title "Fix login"           # or omit --title to use last commit subject
+gocli pr create --ai                          # AI generates conventional title & description from diff
+gocli pr create --title "Fix login"           # or omit --title to use last commit subject / Jira summary
+gocli pr create --transition "In Review"      # auto-links Jira from branch, adds comment, moves to In Review
 gocli pr create --base main --head my-feature
 gocli pr create -R myorg/therepo --workdir C:\other\clone --draft
 gocli pr review 482                           # AI review, prints markdown
+gocli pr review 482 --comment --inline        # post review with inline comments to GitHub
+gocli pr review 482 --apply                   # automatically fix review suggestions on local branch
 
 gocli deploy list -f examples/deploy.yml
 gocli deploy run staging --dry-run

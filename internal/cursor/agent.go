@@ -52,6 +52,12 @@ func Run(ctx context.Context, in RunInput) error {
 	return nil
 }
 
+// IsAvailable returns true if the Cursor agent binary is found in PATH or config.
+func IsAvailable() bool {
+	_, err := resolveBinary()
+	return err == nil
+}
+
 func resolveBinary() (string, error) {
 	if v := strings.TrimSpace(os.Getenv("GOCLI_CURSOR_BINARY")); v != "" {
 		return v, nil
